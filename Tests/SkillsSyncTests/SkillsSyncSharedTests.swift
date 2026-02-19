@@ -51,8 +51,7 @@ final class SkillsSyncSharedTests: XCTestCase {
               "symlink_target": "/tmp/alpha"
             }
           ],
-          "top_skills": ["skill-1"],
-          "last_command_result": null
+          "top_skills": ["skill-1"]
         }
         """
 
@@ -64,20 +63,6 @@ final class SkillsSyncSharedTests: XCTestCase {
         XCTAssertEqual(state.summary.globalCount, 2)
         XCTAssertEqual(state.skills.count, 1)
         XCTAssertEqual(state.topSkills.first, "skill-1")
-    }
-
-    func testAppendCommandWritesJsonLine() throws {
-        let command = store.makeCommand(type: .syncNow, requestedBy: "unit-test")
-        try store.appendCommand(command)
-
-        let lines = try String(contentsOf: SyncPaths.commandQueueURL)
-            .split(separator: "\n")
-        XCTAssertEqual(lines.count, 1)
-
-        let data = Data(lines[0].utf8)
-        let decoded = try JSONDecoder().decode(SyncCommand.self, from: data)
-        XCTAssertEqual(decoded.type, .syncNow)
-        XCTAssertEqual(decoded.requestedBy, "unit-test")
     }
 
     func testDeepLinkRoutingParsesSkillDetailsURL() {
@@ -112,8 +97,7 @@ final class SkillsSyncSharedTests: XCTestCase {
             sync: .empty,
             summary: .empty,
             skills: skills,
-            topSkills: ["p2", "missing", "g3"],
-            lastCommandResult: nil
+            topSkills: ["p2", "missing", "g3"]
         )
 
         let top = store.topSkills(from: state)

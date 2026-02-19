@@ -29,8 +29,4 @@ enum SyncPaths {
     static var stateURL: URL {
         groupContainerURL.appendingPathComponent("state.json")
     }
-
-    static var commandQueueURL: URL {
-        groupContainerURL.appendingPathComponent("commands.jsonl")
-    }
 }

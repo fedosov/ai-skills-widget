@@ -58,8 +58,7 @@ final class SyncPresentationTests: XCTestCase {
                 makeSkill(id: "g-1", name: "Global Skill", scope: "global"),
                 makeSkill(id: "p-1", name: "Project Skill", scope: "project")
             ],
-            topSkills: [],
-            lastCommandResult: nil
+            topSkills: []
         )
 
         viewModel.scopeFilter = .all

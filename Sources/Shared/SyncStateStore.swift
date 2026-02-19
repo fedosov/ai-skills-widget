@@ -5,7 +5,7 @@ struct SyncStateStore {
     private let encoder = JSONEncoder()
 
     init() {
-        encoder.outputFormatting = [.sortedKeys]
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     }
 
     func loadState() -> SyncState {
@@ -19,6 +19,16 @@ struct SyncStateStore {
         }
 
         return state
+    }
+
+    func saveState(_ state: SyncState) throws {
+        try FileManager.default.createDirectory(
+            at: SyncPaths.groupContainerURL,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        let payload = try encoder.encode(state)
+        try payload.write(to: SyncPaths.stateURL, options: [.atomic])
     }
 
     func topSkills(from state: SyncState) -> [SkillRecord] {
@@ -41,51 +51,4 @@ struct SyncStateStore {
         return Array((preferred + fallback).prefix(6))
     }
 
-    func appendCommand(_ command: SyncCommand) throws {
-        let url = SyncPaths.commandQueueURL
-        try FileManager.default.createDirectory(
-            at: SyncPaths.groupContainerURL,
-            withIntermediateDirectories: true,
-            attributes: nil
-        )
-
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: Data())
-        }
-
-        let payload = try encoder.encode(command)
-        guard var line = String(data: payload, encoding: .utf8) else {
-            throw NSError(domain: "SkillsSync", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot encode command"])
-        }
-        line += "\n"
-
-        guard let bytes = line.data(using: .utf8) else {
-            throw NSError(domain: "SkillsSync", code: 2, userInfo: [NSLocalizedDescriptionKey: "Cannot serialize command line"])
-        }
-
-        let handle = try FileHandle(forWritingTo: url)
-        defer {
-            try? handle.close()
-        }
-
-        try handle.seekToEnd()
-        try handle.write(contentsOf: bytes)
-    }
-
-    func makeCommand(
-        type: CommandType,
-        skill: SkillRecord? = nil,
-        requestedBy: String,
-        confirmed: Bool? = nil
-    ) -> SyncCommand {
-        SyncCommand(
-            id: UUID().uuidString,
-            createdAt: ISO8601DateFormatter().string(from: Date()),
-            type: type,
-            skillId: skill?.id,
-            path: skill?.canonicalSourcePath,
-            requestedBy: requestedBy,
-            confirmed: confirmed
-        )
-    }
 }

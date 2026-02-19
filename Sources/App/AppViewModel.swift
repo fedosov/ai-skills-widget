@@ -73,72 +73,73 @@ final class AppViewModel: ObservableObject {
         )
     }
 
-    func queueSync() {
-        queue(type: .syncNow, skill: nil, confirmed: nil)
+    func syncNow() {
+        Task {
+            do {
+                let engine = SyncEngine()
+                state = try await engine.runSync(trigger: .manual)
+                localBanner = InlineBannerPresentation(
+                    title: "Sync completed",
+                    message: "Skills were synchronized successfully.",
+                    symbol: "checkmark.circle.fill",
+                    role: .success,
+                    recoveryActionTitle: nil
+                )
+            } catch {
+                load()
+                alertMessage = error.localizedDescription
+            }
+        }
     }
 
-    func queueOpen(skill: SkillRecord) {
-        queue(type: .openInZed, skill: skill, confirmed: nil)
-    }
-
-    func queueReveal(skill: SkillRecord) {
-        queue(type: .revealInFinder, skill: skill, confirmed: nil)
-    }
-
-    func queueDelete(skill: SkillRecord) {
-        queue(type: .deleteCanonicalSource, skill: skill, confirmed: true)
-    }
-
-    private func queue(type: CommandType, skill: SkillRecord?, confirmed: Bool?) {
-        let command = store.makeCommand(
-            type: type,
-            skill: skill,
-            requestedBy: "app",
-            confirmed: confirmed
-        )
-
+    func open(skill: SkillRecord) {
         do {
-            try store.appendCommand(command)
-            localBanner = Self.makeConfirmationBanner(type: type, skill: skill)
+            let engine = SyncEngine()
+            try engine.openInZed(skill: skill)
+            localBanner = InlineBannerPresentation(
+                title: "Opened in Zed",
+                message: "\(skill.name) was opened in Zed.",
+                symbol: "checkmark.circle.fill",
+                role: .success,
+                recoveryActionTitle: nil
+            )
         } catch {
             alertMessage = error.localizedDescription
         }
     }
 
-    private nonisolated static func makeConfirmationBanner(type: CommandType, skill: SkillRecord?) -> InlineBannerPresentation {
-        switch type {
-        case .syncNow:
-            return InlineBannerPresentation(
-                title: "Sync requested",
-                message: "Source skills queued for synchronization to destinations.",
-                symbol: "arrow.clockwise.circle.fill",
-                role: .success,
-                recoveryActionTitle: nil
-            )
-        case .openInZed:
-            return InlineBannerPresentation(
-                title: "Open requested",
-                message: "\(skill?.name ?? "Source") was queued to open in Zed.",
+    func reveal(skill: SkillRecord) {
+        do {
+            let engine = SyncEngine()
+            try engine.revealInFinder(skill: skill)
+            localBanner = InlineBannerPresentation(
+                title: "Revealed in Finder",
+                message: "\(skill.name) was revealed in Finder.",
                 symbol: "checkmark.circle.fill",
                 role: .success,
                 recoveryActionTitle: nil
             )
-        case .revealInFinder:
-            return InlineBannerPresentation(
-                title: "Reveal requested",
-                message: "\(skill?.name ?? "Source") was queued to reveal in Finder.",
-                symbol: "checkmark.circle.fill",
-                role: .success,
-                recoveryActionTitle: nil
-            )
-        case .deleteCanonicalSource:
-            return InlineBannerPresentation(
-                title: "Delete requested",
-                message: "\(skill?.name ?? "Source") was queued to move to Trash.",
-                symbol: "checkmark.circle.fill",
-                role: .warning,
-                recoveryActionTitle: nil
-            )
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    func delete(skill: SkillRecord) {
+        Task {
+            do {
+                let engine = SyncEngine()
+                state = try await engine.deleteCanonicalSource(skill: skill, confirmed: true)
+                localBanner = InlineBannerPresentation(
+                    title: "Moved to Trash",
+                    message: "\(skill.name) was moved to Trash.",
+                    symbol: "checkmark.circle.fill",
+                    role: .warning,
+                    recoveryActionTitle: nil
+                )
+            } catch {
+                load()
+                alertMessage = error.localizedDescription
+            }
         }
     }
 }

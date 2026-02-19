@@ -47,15 +47,8 @@ private struct ContentView: View {
         return .syncFailure(errorDetails: viewModel.state.sync.error)
     }
 
-    private var commandBanner: InlineBannerPresentation? {
-        guard let result = viewModel.state.lastCommandResult else {
-            return nil
-        }
-        return .commandResult(result)
-    }
-
     private var feedbackMessages: [InlineBannerPresentation] {
-        [syncErrorBanner, commandBanner, viewModel.localBanner].compactMap { $0 }
+        [syncErrorBanner, viewModel.localBanner].compactMap { $0 }
     }
 
     var body: some View {
@@ -72,10 +65,10 @@ private struct ContentView: View {
                 state: viewModel.state,
                 selectedSkill: selectedSkill,
                 feedbackMessages: feedbackMessages,
-                onSyncNow: viewModel.queueSync,
-                onOpen: viewModel.queueOpen,
-                onReveal: viewModel.queueReveal,
-                onDelete: viewModel.queueDelete
+                onSyncNow: viewModel.syncNow,
+                onOpen: viewModel.open,
+                onReveal: viewModel.reveal,
+                onDelete: viewModel.delete
             )
         }
         .toolbar {
@@ -84,7 +77,7 @@ private struct ContentView: View {
                     viewModel.refreshSources()
                 }
                 Button("Sync Now") {
-                    viewModel.queueSync()
+                    viewModel.syncNow()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }

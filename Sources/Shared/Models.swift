@@ -14,7 +14,6 @@ struct SyncState: Codable {
     let summary: SyncSummary
     let skills: [SkillRecord]
     let topSkills: [String]
-    let lastCommandResult: CommandResult?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -23,7 +22,6 @@ struct SyncState: Codable {
         case summary
         case skills
         case topSkills = "top_skills"
-        case lastCommandResult = "last_command_result"
     }
 
     static let empty = SyncState(
@@ -32,8 +30,7 @@ struct SyncState: Codable {
         sync: .empty,
         summary: .empty,
         skills: [],
-        topSkills: [],
-        lastCommandResult: nil
+        topSkills: []
     )
 }
 
@@ -100,48 +97,5 @@ struct SkillRecord: Codable, Identifiable, Hashable {
         case packageType = "package_type"
         case skillKey = "skill_key"
         case symlinkTarget = "symlink_target"
-    }
-}
-
-struct CommandResult: Codable {
-    let id: String?
-    let type: CommandType
-    let executedAt: String
-    let status: String
-    let message: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case type
-        case executedAt = "executed_at"
-        case status
-        case message
-    }
-}
-
-enum CommandType: String, Codable {
-    case syncNow = "sync_now"
-    case openInZed = "open_in_zed"
-    case revealInFinder = "reveal_in_finder"
-    case deleteCanonicalSource = "delete_canonical_source"
-}
-
-struct SyncCommand: Codable {
-    let id: String
-    let createdAt: String
-    let type: CommandType
-    let skillId: String?
-    let path: String?
-    let requestedBy: String
-    let confirmed: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case createdAt = "created_at"
-        case type
-        case skillId = "skill_id"
-        case path
-        case requestedBy = "requested_by"
-        case confirmed
     }
 }

@@ -50,36 +50,6 @@ struct InlineBannerPresentation: Equatable {
         )
     }
 
-    static func commandResult(_ result: CommandResult) -> InlineBannerPresentation {
-        let normalized = result.status.lowercased()
-        if normalized.contains("ok") || normalized.contains("success") {
-            return InlineBannerPresentation(
-                title: "Last action succeeded",
-                message: result.message,
-                symbol: "checkmark.circle.fill",
-                role: .success,
-                recoveryActionTitle: nil
-            )
-        }
-
-        if normalized.contains("fail") || normalized.contains("error") {
-            return InlineBannerPresentation(
-                title: "Last action needs attention",
-                message: result.message,
-                symbol: "exclamationmark.triangle.fill",
-                role: .error,
-                recoveryActionTitle: nil
-            )
-        }
-
-        return InlineBannerPresentation(
-            title: "Last action update",
-            message: result.message,
-            symbol: "info.circle.fill",
-            role: .info,
-            recoveryActionTitle: nil
-        )
-    }
 }
 
 enum ScopeFilter: String, CaseIterable, Identifiable {
