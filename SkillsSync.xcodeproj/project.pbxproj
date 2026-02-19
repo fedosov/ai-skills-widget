@@ -1,0 +1,574 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		122C69D6EE5B35A97FFD40B3 /* SyncPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */; };
+		13EBAA6B6B6E2FDDC1D0884A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75916AF05215B08D62932045 /* Models.swift */; };
+		2BA20D1A45C987E3A6EFC3C2 /* SkillsSyncSharedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD727AEEDFD6802944F1D016 /* SkillsSyncSharedTests.swift */; };
+		2CC8CA29FFAB590491FD1B5B /* SkillsSyncWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1E430EFBAE2A24955E6B9B50 /* SkillsSyncWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		318F1E914789478F9222995B /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFEFD525ED4642D44514C61 /* Intents.swift */; };
+		4DC9A94B8280D3CC15C2A9E6 /* SyncStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02B72351E85AD5A64F858F7C /* SyncStateStore.swift */; };
+		51A39AD0D616EB4AAB4BD585 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54F944AA3EF312EF6EE100D1 /* AppViewModel.swift */; };
+		53CB1ADA2789A03334B44510 /* SyncStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02B72351E85AD5A64F858F7C /* SyncStateStore.swift */; };
+		543D4F2D0FDFB533D3AF5CA3 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75916AF05215B08D62932045 /* Models.swift */; };
+		5CACADC50C8F8FEC86FDC44F /* SyncPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */; };
+		5D78B2135CD93FC3A887F6B6 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFEFD525ED4642D44514C61 /* Intents.swift */; };
+		94C554AFC8EF604E76323972 /* SkillsSyncWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AF7B76C052AE66227E48F6E /* SkillsSyncWidget.swift */; };
+		A1DFE349C632CA8C6F66B391 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */; };
+		B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */; };
+		C2BBC39037C663095C8A879B /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		189D847BDB9D4E9488CCFFBC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 484A2DDF4A7DF4FD49B55BDD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0ECF7B763F8D3AEE54AB5AD;
+			remoteInfo = SkillsSyncApp;
+		};
+		D3906E99E73DD205D12E4AA9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 484A2DDF4A7DF4FD49B55BDD /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0034BFD07F49A2F0C1F42C38;
+			remoteInfo = SkillsSyncWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		CDE4BC5A073D6979C2752262 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				2CC8CA29FFAB590491FD1B5B /* SkillsSyncWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		02B72351E85AD5A64F858F7C /* SyncStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStateStore.swift; sourceTree = "<group>"; };
+		138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsSyncApp.swift; sourceTree = "<group>"; };
+		1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPaths.swift; sourceTree = "<group>"; };
+		1E430EFBAE2A24955E6B9B50 /* SkillsSyncWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SkillsSyncWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2AF7B76C052AE66227E48F6E /* SkillsSyncWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsSyncWidget.swift; sourceTree = "<group>"; };
+		4FFEFD525ED4642D44514C61 /* Intents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Intents.swift; sourceTree = "<group>"; };
+		50B0CFB704F288B32B1CA059 /* SkillsSyncApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SkillsSyncApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		54F944AA3EF312EF6EE100D1 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
+		75916AF05215B08D62932045 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		FD727AEEDFD6802944F1D016 /* SkillsSyncSharedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsSyncSharedTests.swift; sourceTree = "<group>"; };
+		FF5F0F7FB0C7F6161A8AD575 /* SkillsSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkillsSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		50C92E3729C1FFB1ABBA2871 /* Widget */ = {
+			isa = PBXGroup;
+			children = (
+				2AF7B76C052AE66227E48F6E /* SkillsSyncWidget.swift */,
+			);
+			path = Widget;
+			sourceTree = "<group>";
+		};
+		5FABA9E265C652B1C44BC4DF /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */,
+				4FFEFD525ED4642D44514C61 /* Intents.swift */,
+				75916AF05215B08D62932045 /* Models.swift */,
+				1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */,
+				02B72351E85AD5A64F858F7C /* SyncStateStore.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		5FD6BF5FD29962BF06A02BB4 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				D50061ADBBD154BA77D132E2 /* App */,
+				5FABA9E265C652B1C44BC4DF /* Shared */,
+				50C92E3729C1FFB1ABBA2871 /* Widget */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		B5B3B73EBF7947A402C6BF31 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				EECFD414A826E6DC2E6DD00A /* SkillsSyncTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		C77555087876DCBF7F0D2CA3 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				50B0CFB704F288B32B1CA059 /* SkillsSyncApp.app */,
+				FF5F0F7FB0C7F6161A8AD575 /* SkillsSyncTests.xctest */,
+				1E430EFBAE2A24955E6B9B50 /* SkillsSyncWidgetExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D50061ADBBD154BA77D132E2 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				54F944AA3EF312EF6EE100D1 /* AppViewModel.swift */,
+				138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		EECFD414A826E6DC2E6DD00A /* SkillsSyncTests */ = {
+			isa = PBXGroup;
+			children = (
+				FD727AEEDFD6802944F1D016 /* SkillsSyncSharedTests.swift */,
+			);
+			path = SkillsSyncTests;
+			sourceTree = "<group>";
+		};
+		F5354A579777DD6D2ADDC8E8 = {
+			isa = PBXGroup;
+			children = (
+				5FD6BF5FD29962BF06A02BB4 /* Sources */,
+				B5B3B73EBF7947A402C6BF31 /* Tests */,
+				C77555087876DCBF7F0D2CA3 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0034BFD07F49A2F0C1F42C38 /* SkillsSyncWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EA29FB48F8F4AC503DF73190 /* Build configuration list for PBXNativeTarget "SkillsSyncWidgetExtension" */;
+			buildPhases = (
+				E1DA070DA0AA5C8233992E55 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SkillsSyncWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = SkillsSyncWidgetExtension;
+			productReference = 1E430EFBAE2A24955E6B9B50 /* SkillsSyncWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		9E43488A3BBDAE36E6E1B10A /* SkillsSyncTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA85E675BA19214D91B12A59 /* Build configuration list for PBXNativeTarget "SkillsSyncTests" */;
+			buildPhases = (
+				131315786A15EE83AECA3CB9 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				70FB87B415DF9FAD35308281 /* PBXTargetDependency */,
+			);
+			name = SkillsSyncTests;
+			packageProductDependencies = (
+			);
+			productName = SkillsSyncTests;
+			productReference = FF5F0F7FB0C7F6161A8AD575 /* SkillsSyncTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F0ECF7B763F8D3AEE54AB5AD /* SkillsSyncApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E6BF16C3169E96D3A0062877 /* Build configuration list for PBXNativeTarget "SkillsSyncApp" */;
+			buildPhases = (
+				1B632EA81D4B30812D09616F /* Sources */,
+				CDE4BC5A073D6979C2752262 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				57D0A434D1CB3F33D27FCBCA /* PBXTargetDependency */,
+			);
+			name = SkillsSyncApp;
+			packageProductDependencies = (
+			);
+			productName = SkillsSyncApp;
+			productReference = 50B0CFB704F288B32B1CA059 /* SkillsSyncApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		484A2DDF4A7DF4FD49B55BDD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					0034BFD07F49A2F0C1F42C38 = {
+						DevelopmentTeam = AK7R88WBZ6;
+						ProvisioningStyle = Automatic;
+					};
+					9E43488A3BBDAE36E6E1B10A = {
+						DevelopmentTeam = AK7R88WBZ6;
+						ProvisioningStyle = Automatic;
+					};
+					F0ECF7B763F8D3AEE54AB5AD = {
+						DevelopmentTeam = AK7R88WBZ6;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = B9D08BFCBDE2A54E3CFCB181 /* Build configuration list for PBXProject "SkillsSync" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = F5354A579777DD6D2ADDC8E8;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F0ECF7B763F8D3AEE54AB5AD /* SkillsSyncApp */,
+				9E43488A3BBDAE36E6E1B10A /* SkillsSyncTests */,
+				0034BFD07F49A2F0C1F42C38 /* SkillsSyncWidgetExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		131315786A15EE83AECA3CB9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2BA20D1A45C987E3A6EFC3C2 /* SkillsSyncSharedTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1B632EA81D4B30812D09616F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				51A39AD0D616EB4AAB4BD585 /* AppViewModel.swift in Sources */,
+				C2BBC39037C663095C8A879B /* DeepLink.swift in Sources */,
+				5D78B2135CD93FC3A887F6B6 /* Intents.swift in Sources */,
+				543D4F2D0FDFB533D3AF5CA3 /* Models.swift in Sources */,
+				B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */,
+				5CACADC50C8F8FEC86FDC44F /* SyncPaths.swift in Sources */,
+				53CB1ADA2789A03334B44510 /* SyncStateStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E1DA070DA0AA5C8233992E55 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1DFE349C632CA8C6F66B391 /* DeepLink.swift in Sources */,
+				318F1E914789478F9222995B /* Intents.swift in Sources */,
+				13EBAA6B6B6E2FDDC1D0884A /* Models.swift in Sources */,
+				94C554AFC8EF604E76323972 /* SkillsSyncWidget.swift in Sources */,
+				122C69D6EE5B35A97FFD40B3 /* SyncPaths.swift in Sources */,
+				4DC9A94B8280D3CC15C2A9E6 /* SyncStateStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		57D0A434D1CB3F33D27FCBCA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0034BFD07F49A2F0C1F42C38 /* SkillsSyncWidgetExtension */;
+			targetProxy = D3906E99E73DD205D12E4AA9 /* PBXContainerItemProxy */;
+		};
+		70FB87B415DF9FAD35308281 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F0ECF7B763F8D3AEE54AB5AD /* SkillsSyncApp */;
+			targetProxy = 189D847BDB9D4E9488CCFFBC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		04A6923BC08E3756AB57A6DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = App/SkillsSyncWidgetExtension.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "App/Widget-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fedosov.skillssync.app.widget;
+				PRODUCT_NAME = SkillsSyncWidgetExtension;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		109105D8D1FE555433402CE9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = AK7R88WBZ6;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		59F55E9AEE4B278A12EAAD76 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fedosov.skillssync.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkillsSyncApp.app/Contents/MacOS/SkillsSyncApp";
+			};
+			name = Debug;
+		};
+		70B5668D434699B66870F43F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = AK7R88WBZ6;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		74BAB813DA0F2086927F1D07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = App/SkillsSyncWidgetExtension.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "App/Widget-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fedosov.skillssync.app.widget;
+				PRODUCT_NAME = SkillsSyncWidgetExtension;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		801FC2B0E1CE6E688157CA61 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/SkillsSyncApp.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "App/App-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fedosov.skillssync.app;
+				PRODUCT_NAME = SkillsSyncApp;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		AFD42312ED05C70213A7675D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/SkillsSyncApp.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "App/App-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fedosov.skillssync.app;
+				PRODUCT_NAME = SkillsSyncApp;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		CD1ED1B41AA0AB0C8BA03659 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.fedosov.skillssync.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkillsSyncApp.app/Contents/MacOS/SkillsSyncApp";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA85E675BA19214D91B12A59 /* Build configuration list for PBXNativeTarget "SkillsSyncTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				59F55E9AEE4B278A12EAAD76 /* Debug */,
+				CD1ED1B41AA0AB0C8BA03659 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B9D08BFCBDE2A54E3CFCB181 /* Build configuration list for PBXProject "SkillsSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70B5668D434699B66870F43F /* Debug */,
+				109105D8D1FE555433402CE9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E6BF16C3169E96D3A0062877 /* Build configuration list for PBXNativeTarget "SkillsSyncApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				801FC2B0E1CE6E688157CA61 /* Debug */,
+				AFD42312ED05C70213A7675D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EA29FB48F8F4AC503DF73190 /* Build configuration list for PBXNativeTarget "SkillsSyncWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				04A6923BC08E3756AB57A6DC /* Debug */,
+				74BAB813DA0F2086927F1D07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 484A2DDF4A7DF4FD49B55BDD /* Project object */;
+}
