@@ -1,16 +1,45 @@
 import Foundation
 
+protocol SyncEngineControlling {
+    func runSync(trigger: SyncTrigger) async throws -> SyncState
+    func openInZed(skill: SkillRecord) throws
+    func revealInFinder(skill: SkillRecord) throws
+    func deleteCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
+}
+
+extension SyncEngine: SyncEngineControlling { }
+
 @MainActor
 final class AppViewModel: ObservableObject {
     @Published var state: SyncState = .empty
     @Published var searchText: String = ""
     @Published var scopeFilter: ScopeFilter = .all
-    @Published var selectedSkillID: String?
+    @Published var selectedSkillIDs: Set<String> = []
     @Published var alertMessage: String?
     @Published var localBanner: InlineBannerPresentation?
 
-    private let store = SyncStateStore()
+    private let store: SyncStateStore
+    private let makeEngine: () -> any SyncEngineControlling
     private var timer: Timer?
+
+    var selectedSkills: [SkillRecord] {
+        state.skills.filter { selectedSkillIDs.contains($0.id) }
+    }
+
+    var singleSelectedSkill: SkillRecord? {
+        guard selectedSkillIDs.count == 1 else {
+            return nil
+        }
+        return selectedSkills.first
+    }
+
+    init(
+        store: SyncStateStore = SyncStateStore(),
+        makeEngine: @escaping () -> any SyncEngineControlling = { SyncEngine() }
+    ) {
+        self.store = store
+        self.makeEngine = makeEngine
+    }
 
     var filteredSkills: [SkillRecord] {
         Self.applyFilters(to: state.skills, query: searchText, scopeFilter: scopeFilter)
@@ -55,10 +84,12 @@ final class AppViewModel: ObservableObject {
 
     func load() {
         state = store.loadState()
+        pruneSelectionToCurrentSkills()
+    }
 
-        if let selectedSkillID, !state.skills.contains(where: { $0.id == selectedSkillID }) {
-            self.selectedSkillID = nil
-        }
+    func pruneSelectionToCurrentSkills() {
+        let validIDs = Set(state.skills.map(\.id))
+        selectedSkillIDs = selectedSkillIDs.intersection(validIDs)
     }
 
     func refreshSources() {
@@ -76,7 +107,7 @@ final class AppViewModel: ObservableObject {
     func syncNow() {
         Task {
             do {
-                let engine = SyncEngine()
+                let engine = makeEngine()
                 state = try await engine.runSync(trigger: .manual)
                 localBanner = InlineBannerPresentation(
                     title: "Sync completed",
@@ -94,7 +125,7 @@ final class AppViewModel: ObservableObject {
 
     func open(skill: SkillRecord) {
         do {
-            let engine = SyncEngine()
+            let engine = makeEngine()
             try engine.openInZed(skill: skill)
             localBanner = InlineBannerPresentation(
                 title: "Opened in Zed",
@@ -110,7 +141,7 @@ final class AppViewModel: ObservableObject {
 
     func reveal(skill: SkillRecord) {
         do {
-            let engine = SyncEngine()
+            let engine = makeEngine()
             try engine.revealInFinder(skill: skill)
             localBanner = InlineBannerPresentation(
                 title: "Revealed in Finder",
@@ -127,8 +158,10 @@ final class AppViewModel: ObservableObject {
     func delete(skill: SkillRecord) {
         Task {
             do {
-                let engine = SyncEngine()
+                let engine = makeEngine()
                 state = try await engine.deleteCanonicalSource(skill: skill, confirmed: true)
+                selectedSkillIDs.remove(skill.id)
+                pruneSelectionToCurrentSkills()
                 localBanner = InlineBannerPresentation(
                     title: "Moved to Trash",
                     message: "\(skill.name) was moved to Trash.",
@@ -141,5 +174,69 @@ final class AppViewModel: ObservableObject {
                 alertMessage = error.localizedDescription
             }
         }
+    }
+
+    func deleteSelectedSkills() {
+        Task {
+            await deleteSelectedSkillsNow()
+        }
+    }
+
+    func deleteSelectedSkillsNow() async {
+        let skillsToDelete = selectedSkills
+        guard !skillsToDelete.isEmpty else {
+            return
+        }
+
+        let total = skillsToDelete.count
+        var successCount = 0
+        var deletedIDs: Set<String> = []
+        var failures: [(name: String, error: String)] = []
+
+        for skill in skillsToDelete {
+            do {
+                let engine = makeEngine()
+                state = try await engine.deleteCanonicalSource(skill: skill, confirmed: true)
+                successCount += 1
+                deletedIDs.insert(skill.id)
+            } catch {
+                failures.append((name: skill.name, error: error.localizedDescription))
+            }
+        }
+
+        selectedSkillIDs.subtract(deletedIDs)
+        pruneSelectionToCurrentSkills()
+
+        if successCount > 0 {
+            localBanner = InlineBannerPresentation(
+                title: "Moved to Trash",
+                message: "Deleted \(successCount) of \(total) selected skills.",
+                symbol: "checkmark.circle.fill",
+                role: failures.isEmpty ? .warning : .info,
+                recoveryActionTitle: nil
+            )
+        } else {
+            localBanner = nil
+        }
+
+        guard !failures.isEmpty else {
+            return
+        }
+        alertMessage = bulkDeleteFailureMessage(total: total, failures: failures)
+    }
+
+    private func bulkDeleteFailureMessage(total: Int, failures: [(name: String, error: String)]) -> String {
+        let maxLines = 5
+        let lines = failures.prefix(maxLines).map { failure in
+            "\(failure.name): \(failure.error)"
+        }
+        var message = "Failed to delete \(failures.count) of \(total) selected skills."
+        if !lines.isEmpty {
+            message += "\n\n" + lines.joined(separator: "\n")
+        }
+        if failures.count > maxLines {
+            message += "\n...and \(failures.count - maxLines) more."
+        }
+        return message
     }
 }

@@ -14,7 +14,7 @@ Native macOS app for monitoring and controlling skills sync.
 
 ## Data contract
 
-- Primary app state file: `~/Library/Group Containers/group.dev.fedosov.skillssync/state.json`
+- Primary app state file: `~/Library/Application Support/SkillsSync/state.json`
 - Native sync runtime: `/Users/fedosov/.config/ai-agents/skillssync/`
 
 ## Build

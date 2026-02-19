@@ -110,7 +110,7 @@ final class SkillsSyncSharedTests: XCTestCase {
     }
 
     func testSyncPathsFallbackUsesApplicationSupportDirectory() {
-        let fallback = SyncPaths.fallbackContainerURL.path
+        let fallback = SyncPaths.storageDirectoryURL.path
         XCTAssertTrue(fallback.contains("/Library/Application Support/SkillsSync"))
         XCTAssertFalse(fallback.contains("/.config/ai-agents/skillssync"))
     }

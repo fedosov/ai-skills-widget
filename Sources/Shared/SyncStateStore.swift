@@ -23,7 +23,7 @@ struct SyncStateStore {
 
     func saveState(_ state: SyncState) throws {
         try FileManager.default.createDirectory(
-            at: SyncPaths.groupContainerURL,
+            at: SyncPaths.runtimeDirectoryURL,
             withIntermediateDirectories: true,
             attributes: nil
         )

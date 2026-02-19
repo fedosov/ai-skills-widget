@@ -27,8 +27,6 @@ targets:
       path: App/SkillsSyncApp.entitlements
       properties:
         com.apple.security.app-sandbox: false
-        com.apple.security.application-groups:
-          - group.dev.fedosov.skillssync
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.fedosov.skillssync.app

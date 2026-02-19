@@ -17,7 +17,7 @@ struct SkillsSyncApp: App {
                 .onOpenURL { url in
                     guard let route = DeepLinkParser.parse(url) else { return }
                     if case let .skill(id: skillID) = route {
-                        viewModel.selectedSkillID = skillID
+                        viewModel.selectedSkillIDs = Set([skillID])
                     }
                 }
                 .alert("Operation Failed", isPresented: Binding(
@@ -34,10 +34,6 @@ struct SkillsSyncApp: App {
 
 private struct ContentView: View {
     @ObservedObject var viewModel: AppViewModel
-
-    private var selectedSkill: SkillRecord? {
-        viewModel.state.skills.first(where: { $0.id == viewModel.selectedSkillID })
-    }
 
     private var syncErrorBanner: InlineBannerPresentation? {
         let hasError = !(viewModel.state.sync.error?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
@@ -57,18 +53,20 @@ private struct ContentView: View {
                 skills: viewModel.filteredSkills,
                 searchText: $viewModel.searchText,
                 scopeFilter: $viewModel.scopeFilter,
-                selectedSkillID: $viewModel.selectedSkillID
+                selectedSkillIDs: $viewModel.selectedSkillIDs
             )
             .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
         } detail: {
             DetailPaneView(
                 state: viewModel.state,
-                selectedSkill: selectedSkill,
+                selectedSkills: viewModel.selectedSkills,
+                singleSelectedSkill: viewModel.singleSelectedSkill,
                 feedbackMessages: feedbackMessages,
                 onSyncNow: viewModel.syncNow,
                 onOpen: viewModel.open,
                 onReveal: viewModel.reveal,
-                onDelete: viewModel.delete
+                onDelete: viewModel.delete,
+                onDeleteSelected: viewModel.deleteSelectedSkills
             )
         }
         .toolbar {
@@ -89,7 +87,7 @@ private struct SidebarView: View {
     let skills: [SkillRecord]
     @Binding var searchText: String
     @Binding var scopeFilter: ScopeFilter
-    @Binding var selectedSkillID: String?
+    @Binding var selectedSkillIDs: Set<String>
 
     var body: some View {
         VStack(spacing: 8) {
@@ -109,7 +107,7 @@ private struct SidebarView: View {
                     Text("Run Sync Now to discover skills, then select one to inspect.")
                 }
             } else {
-                List(selection: $selectedSkillID) {
+                List(selection: $selectedSkillIDs) {
                     Section("Source Skills (\(skills.count))") {
                         ForEach(skills, id: \.id) { skill in
                             SkillRowView(skill: skill)
@@ -118,7 +116,7 @@ private struct SidebarView: View {
                     }
                 }
                 .listStyle(.sidebar)
-                .searchable(text: $searchText, prompt: "Search skills and paths")
+                .searchable(text: $searchText, placement: .sidebar, prompt: "Search skills and paths")
             }
         }
     }
@@ -130,11 +128,11 @@ private struct SkillRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(skill.name)
-                .font(.headline)
+                .font(.body.weight(.semibold))
                 .lineLimit(1)
 
             Text(skill.canonicalSourcePath)
-                .font(.caption.monospaced())
+                .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -145,6 +143,7 @@ private struct SkillRowView: View {
                     .foregroundStyle(.red)
             }
         }
+        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(skill.accessibilitySummary)
     }
@@ -152,29 +151,41 @@ private struct SkillRowView: View {
 
 private struct DetailPaneView: View {
     let state: SyncState
-    let selectedSkill: SkillRecord?
+    let selectedSkills: [SkillRecord]
+    let singleSelectedSkill: SkillRecord?
     let feedbackMessages: [InlineBannerPresentation]
     let onSyncNow: () -> Void
     let onOpen: (SkillRecord) -> Void
     let onReveal: (SkillRecord) -> Void
     let onDelete: (SkillRecord) -> Void
+    let onDeleteSelected: () -> Void
 
     var body: some View {
-        if let selectedSkill {
+        if let singleSelectedSkill {
             SkillDetailView(
                 state: state,
-                skill: selectedSkill,
+                skill: singleSelectedSkill,
                 feedbackMessages: feedbackMessages,
                 onSyncNow: onSyncNow,
                 onOpen: onOpen,
                 onReveal: onReveal,
                 onDelete: onDelete
             )
+        } else if selectedSkills.count > 1 {
+            MultiSelectionDetailView(
+                state: state,
+                selectedCount: selectedSkills.count,
+                feedbackMessages: feedbackMessages,
+                onSyncNow: onSyncNow,
+                onDeleteSelected: onDeleteSelected
+            )
         } else {
             VStack(spacing: 0) {
-                Form {
-                    SyncStatusSection(state: state, feedbackMessages: feedbackMessages, onSyncNow: onSyncNow)
-                }
+                HomeSyncHealthView(
+                    state: state,
+                    feedbackMessages: feedbackMessages,
+                    onSyncNow: onSyncNow
+                )
                 ContentUnavailableView {
                     Label("Choose a Skill", systemImage: "sidebar.right")
                 } description: {
@@ -183,6 +194,118 @@ private struct DetailPaneView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+}
+
+private struct HomeSyncHealthView: View {
+    let state: SyncState
+    let feedbackMessages: [InlineBannerPresentation]
+    let onSyncNow: () -> Void
+
+    private var status: SyncStatusPresentation {
+        state.sync.status.presentation
+    }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(status.title, systemImage: status.symbol)
+                    .foregroundStyle(status.tint)
+                    .font(.headline)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HomeMetricRow(label: "Last update", value: SyncFormatting.updatedLine(state.sync.lastFinishedAt))
+                    HomeMetricRow(label: "Global", value: "\(state.summary.globalCount)")
+                    HomeMetricRow(label: "Project", value: "\(state.summary.projectCount)")
+                    HomeMetricRow(label: "Conflicts", value: "\(state.summary.conflictCount)")
+                }
+
+                if !status.subtitle.isEmpty {
+                    Text(status.subtitle)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(Array(feedbackMessages.enumerated()), id: \.offset) { _, message in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(message.title, systemImage: message.symbol)
+                            .foregroundStyle(message.role.tint)
+                        Text(message.message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if feedbackMessages.contains(where: { $0.recoveryActionTitle != nil }) {
+                    Button("Sync Now") {
+                        onSyncNow()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text("Sync Health")
+        }
+        .padding(12)
+    }
+}
+
+private struct HomeMetricRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Text(value)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct MultiSelectionDetailView: View {
+    let state: SyncState
+    let selectedCount: Int
+    let feedbackMessages: [InlineBannerPresentation]
+    let onSyncNow: () -> Void
+    let onDeleteSelected: () -> Void
+    @State private var showDeleteConfirmation = false
+
+    var body: some View {
+        Form {
+            SyncStatusSection(state: state, feedbackMessages: feedbackMessages, onSyncNow: onSyncNow)
+
+            Section("Selection") {
+                LabeledContent("Selected", value: "\(selectedCount)")
+                Text("Selected: \(selectedCount)")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Button("Move Selected Sources to Trash", role: .destructive) {
+                    showDeleteConfirmation = true
+                }
+                .accessibilityLabel("Move \(selectedCount) selected sources to Trash")
+            } header: {
+                Text("Danger Zone")
+            } footer: {
+                Text("This moves canonical sources to Trash. Some items may fail; successful deletions will still be applied.")
+            }
+        }
+        .confirmationDialog(
+            "Move \(selectedCount) sources to Trash?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Move to Trash", role: .destructive) {
+                onDeleteSelected()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Selected canonical sources will be moved to Trash in a batch operation.")
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -206,7 +329,13 @@ private struct SkillDetailView: View {
                 LabeledContent("Package type", value: skill.packageType)
                 LabeledContent("Scope", value: skill.scopeTitle)
                 if let workspace = skill.workspace {
-                    LabeledContent("Workspace", value: workspace)
+                    LabeledContent("Workspace") {
+                        Text(workspace)
+                            .font(.footnote.monospaced())
+                            .textSelection(.enabled)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(nil)
+                    }
                 }
             }
 
@@ -255,6 +384,7 @@ private struct SkillDetailView: View {
         } message: {
             Text("The canonical source will be moved to Trash.")
         }
+        .formStyle(.grouped)
     }
 }
 
@@ -310,8 +440,8 @@ private struct PathLine: View {
         LabeledContent(label) {
             Text(value)
                 .font(.footnote.monospaced())
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .lineLimit(nil)
+                .multilineTextAlignment(.leading)
                 .textSelection(.enabled)
         }
     }
