@@ -5,6 +5,7 @@ enum SyncTrigger {
     case manual
     case widget
     case delete
+    case makeGlobal
 }
 
 enum SyncEngineError: LocalizedError {
@@ -13,6 +14,12 @@ enum SyncEngineError: LocalizedError {
     case deletionBlockedProtectedPath
     case deletionOutsideAllowedRoots
     case deletionTargetMissing
+    case makeGlobalRequiresConfirmation
+    case makeGlobalOnlyForProject
+    case makeGlobalBlockedProtectedPath
+    case makeGlobalOutsideAllowedRoots
+    case makeGlobalSourceMissing
+    case makeGlobalTargetExists
     case migrationFailed(skillKey: String, reason: String)
 
     var errorDescription: String? {
@@ -27,6 +34,18 @@ enum SyncEngineError: LocalizedError {
             return "Deletion blocked: target outside allowed roots"
         case .deletionTargetMissing:
             return "Deletion target does not exist"
+        case .makeGlobalRequiresConfirmation:
+            return "make_global requires confirmed=true"
+        case .makeGlobalOnlyForProject:
+            return "make_global is only allowed for project skills"
+        case .makeGlobalBlockedProtectedPath:
+            return "Make global blocked for protected path"
+        case .makeGlobalOutsideAllowedRoots:
+            return "Make global blocked: source outside project roots"
+        case .makeGlobalSourceMissing:
+            return "Make global source does not exist"
+        case .makeGlobalTargetExists:
+            return "Make global target already exists"
         case let .migrationFailed(skillKey, reason):
             return "Migration failed for \(skillKey): \(reason)"
         }
@@ -206,6 +225,49 @@ struct SyncEngine {
 
         _ = try moveToTrash(target)
         return try await runSync(trigger: .delete)
+    }
+
+    func makeGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
+        guard confirmed else {
+            throw SyncEngineError.makeGlobalRequiresConfirmation
+        }
+        guard skill.scope == "project" else {
+            throw SyncEngineError.makeGlobalOnlyForProject
+        }
+        let skillKey = skill.skillKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !skillKey.isEmpty else {
+            throw SyncEngineError.makeGlobalOutsideAllowedRoots
+        }
+        guard !isProtectedSkillKey(skillKey) else {
+            throw SyncEngineError.makeGlobalBlockedProtectedPath
+        }
+
+        let source = URL(fileURLWithPath: skill.canonicalSourcePath, isDirectory: true)
+        if isProtectedPath(source) {
+            throw SyncEngineError.makeGlobalBlockedProtectedPath
+        }
+
+        let workspaces = workspaceCandidates()
+        let roots = allowedProjectRoots(workspaces: workspaces)
+        let isAllowed = roots.contains { isRelativeTo(source, base: $0) }
+        guard isAllowed else {
+            throw SyncEngineError.makeGlobalOutsideAllowedRoots
+        }
+
+        let sourceExists = fileManager.fileExists(atPath: source.path) || source.isSymbolicLink
+        guard sourceExists else {
+            throw SyncEngineError.makeGlobalSourceMissing
+        }
+
+        let destination = preferredGlobalDestination(for: skillKey)
+        let destinationExists = fileManager.fileExists(atPath: destination.path) || destination.isSymbolicLink
+        guard !destinationExists else {
+            throw SyncEngineError.makeGlobalTargetExists
+        }
+
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.moveItem(at: source, to: destination)
+        return try await runSync(trigger: .makeGlobal)
     }
 
     private func runCoreSync() throws -> SyncCoreResult {
@@ -795,6 +857,15 @@ struct SyncEngine {
         return roots
     }
 
+    private func allowedProjectRoots(workspaces: [URL]) -> [URL] {
+        var roots: [URL] = []
+        for workspace in workspaces {
+            roots.append(workspace.appendingPathComponent(".claude/skills", isDirectory: true))
+            roots.append(workspace.appendingPathComponent(".agents/skills", isDirectory: true))
+        }
+        return roots
+    }
+
     private func sortEntries(lhs: SkillRecord, rhs: SkillRecord) -> Bool {
         if lhs.scope != rhs.scope {
             return lhs.scope == "global"
@@ -823,6 +894,14 @@ struct SyncEngine {
 
     private func runtimePromptsRoot() -> URL {
         environment.homeDirectory.appendingPathComponent(".config/ai-agents/prompts", isDirectory: true)
+    }
+
+    private func preferredGlobalRoot() -> URL {
+        claudeSkillsRoot()
+    }
+
+    private func preferredGlobalDestination(for skillKey: String) -> URL {
+        preferredGlobalRoot().appendingPathComponent(skillKey, isDirectory: true)
     }
 
     private func globalTargets() -> [URL] {

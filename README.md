@@ -9,6 +9,7 @@ Native macOS app for monitoring and controlling skills sync.
 - Direct actions from app:
   - Open in Zed
   - Reveal in Finder
+  - Make global (move project skill to global scope)
   - Delete canonical source (move to Trash)
   - Sync now
 
@@ -31,3 +32,4 @@ xcodebuild -project SkillsSync.xcodeproj -scheme SkillsSyncApp -destination 'pla
 - Backend is fully in Swift (`SyncEngine`) inside the app target.
 - `commands.jsonl` queue is no longer used.
 - Delete action requires explicit confirmation in host app.
+- Make global action is destructive and requires double confirmation in host app.

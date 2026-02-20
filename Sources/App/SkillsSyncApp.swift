@@ -63,6 +63,7 @@ private struct ContentView: View {
                 onOpen: viewModel.open,
                 onReveal: viewModel.reveal,
                 onDelete: viewModel.delete,
+                onMakeGlobal: viewModel.makeGlobal,
                 onDeleteSelected: viewModel.deleteSelectedSkills
             )
         }
@@ -159,6 +160,7 @@ private struct DetailPaneView: View {
     let onOpen: (SkillRecord) -> Void
     let onReveal: (SkillRecord) -> Void
     let onDelete: (SkillRecord) -> Void
+    let onMakeGlobal: (SkillRecord) -> Void
     let onDeleteSelected: () -> Void
 
     var body: some View {
@@ -167,7 +169,8 @@ private struct DetailPaneView: View {
                 skill: singleSelectedSkill,
                 onOpen: onOpen,
                 onReveal: onReveal,
-                onDelete: onDelete
+                onDelete: onDelete,
+                onMakeGlobal: onMakeGlobal
             )
         } else if selectedSkills.count > 1 {
             MultiSelectionDetailView(
@@ -266,7 +269,10 @@ private struct SkillDetailView: View {
     let onOpen: (SkillRecord) -> Void
     let onReveal: (SkillRecord) -> Void
     let onDelete: (SkillRecord) -> Void
+    let onMakeGlobal: (SkillRecord) -> Void
     @State private var showDeleteConfirmation = false
+    @State private var showMakeGlobalConfirmation = false
+    @State private var showMakeGlobalSecondConfirmation = false
 
     var body: some View {
         Form {
@@ -310,6 +316,12 @@ private struct SkillDetailView: View {
             }
 
             Section {
+                if skill.scope == "project" {
+                    Button("Make Global", role: .destructive) {
+                        showMakeGlobalConfirmation = true
+                    }
+                }
+
                 Button("Move Source to Trash", role: .destructive) {
                     showDeleteConfirmation = true
                 }
@@ -319,6 +331,30 @@ private struct SkillDetailView: View {
                 Text("This moves the canonical source to Trash. You can restore it or run sync again to recreate it.")
                     .font(.app(.secondary))
             }
+        }
+        .confirmationDialog(
+            "Make skill global?",
+            isPresented: $showMakeGlobalConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Continue", role: .destructive) {
+                showMakeGlobalSecondConfirmation = true
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will move the canonical source from the project workspace to global skills.")
+        }
+        .confirmationDialog(
+            "Are you sure?",
+            isPresented: $showMakeGlobalSecondConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Make Global", role: .destructive) {
+                onMakeGlobal(skill)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This action changes scope and file location. Continue?")
         }
         .confirmationDialog(
             "Move Source to Trash?",

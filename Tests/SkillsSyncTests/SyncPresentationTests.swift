@@ -197,6 +197,64 @@ final class SyncPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testMakeGlobalUpdatesStateAndShowsBannerOnSuccess() async {
+        let projectSkill = makeSkill(id: "p-1", name: "Project Skill", scope: "project")
+        let globalSkill = SkillRecord(
+            id: "g-1",
+            name: "Project Skill",
+            scope: "global",
+            workspace: nil,
+            canonicalSourcePath: "/tmp/g-1",
+            targetPaths: ["/tmp/target/g-1"],
+            exists: true,
+            isSymlinkCanonical: true,
+            packageType: "dir",
+            skillKey: projectSkill.skillKey,
+            symlinkTarget: "/tmp/g-1"
+        )
+        let engine = MockSyncEngine(
+            onDelete: { _ in .empty },
+            onMakeGlobal: { _ in
+                Self.makeState(skills: [globalSkill])
+            }
+        )
+        let viewModel = AppViewModel(makeEngine: { engine })
+        viewModel.state = Self.makeState(skills: [projectSkill])
+        viewModel.selectedSkillIDs = Set([projectSkill.id])
+
+        viewModel.makeGlobal(skill: projectSkill)
+        for _ in 0..<50 where viewModel.localBanner?.title != "Made global" {
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(viewModel.state.skills.map(\.scope), ["global"])
+        XCTAssertTrue(viewModel.selectedSkillIDs.isEmpty)
+        XCTAssertEqual(viewModel.localBanner?.title, "Made global")
+    }
+
+    @MainActor
+    func testMakeGlobalLoadsAndShowsAlertOnFailure() async {
+        let projectSkill = makeSkill(id: "p-1", name: "Project Skill", scope: "project")
+        let engine = MockSyncEngine(
+            onDelete: { _ in .empty },
+            onMakeGlobal: { _ in
+                throw MockDeleteError()
+            }
+        )
+        let viewModel = AppViewModel(makeEngine: { engine })
+        viewModel.state = Self.makeState(skills: [projectSkill])
+
+        viewModel.makeGlobal(skill: projectSkill)
+        for _ in 0..<50 where viewModel.alertMessage?.contains("Mock delete error") != true {
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertTrue(viewModel.alertMessage?.contains("Mock delete error") == true)
+    }
+
+    @MainActor
     func testAutoMigrationToggleDefaultsToOff() throws {
         try prepareSettingsDirectory()
 
@@ -257,9 +315,14 @@ private struct MockDeleteError: LocalizedError {
 
 private final class MockSyncEngine: SyncEngineControlling {
     private let onDelete: (SkillRecord) async throws -> SyncState
+    private let onMakeGlobal: (SkillRecord) async throws -> SyncState
 
-    init(onDelete: @escaping (SkillRecord) async throws -> SyncState) {
+    init(
+        onDelete: @escaping (SkillRecord) async throws -> SyncState,
+        onMakeGlobal: @escaping (SkillRecord) async throws -> SyncState = { _ in .empty }
+    ) {
         self.onDelete = onDelete
+        self.onMakeGlobal = onMakeGlobal
     }
 
     func runSync(trigger: SyncTrigger) async throws -> SyncState {
@@ -272,5 +335,9 @@ private final class MockSyncEngine: SyncEngineControlling {
 
     func deleteCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
         try await onDelete(skill)
+    }
+
+    func makeGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
+        try await onMakeGlobal(skill)
     }
 }

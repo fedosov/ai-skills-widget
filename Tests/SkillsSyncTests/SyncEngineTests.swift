@@ -222,6 +222,108 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertTrue(trashed.contains(where: { $0.hasPrefix("delete-ok") }))
     }
 
+    func testMakeGlobalRequiresConfirmedTrue() async throws {
+        let projectSkill = path("Dev/workspace-a/.claude/skills/project-skill")
+        try FileManager.default.createDirectory(at: projectSkill, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: projectSkill.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: projectSkill.path, scope: "project", workspace: path("Dev/workspace-a").path, key: "project-skill")
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.makeGlobal(skill: skill, confirmed: false)
+        }
+    }
+
+    func testMakeGlobalRejectsNonProjectSkill() async throws {
+        let globalSkillPath = path(".claude/skills/global-skill")
+        try FileManager.default.createDirectory(at: globalSkillPath, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: globalSkillPath.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: globalSkillPath.path, scope: "global", workspace: nil, key: "global-skill")
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.makeGlobal(skill: skill, confirmed: true)
+        }
+    }
+
+    func testMakeGlobalRejectsOutsideProjectRoots() async throws {
+        let outside = path("outside/project-skill")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: outside.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: outside.path, scope: "project", workspace: path("Dev/workspace-a").path, key: "project-skill")
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.makeGlobal(skill: skill, confirmed: true)
+        }
+    }
+
+    func testMakeGlobalRejectsProtectedPath() async throws {
+        let protected = path("Dev/workspace-a/.claude/skills/.system/protected-skill")
+        try FileManager.default.createDirectory(at: protected, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: protected.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: protected.path, scope: "project", workspace: path("Dev/workspace-a").path, key: ".system/protected-skill")
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.makeGlobal(skill: skill, confirmed: true)
+        }
+    }
+
+    func testMakeGlobalRejectsWhenSourceMissing() async throws {
+        configureEngine()
+        let engine = SyncEngine()
+        let missing = path("Dev/workspace-a/.claude/skills/missing-skill")
+        let skill = makeSkill(path: missing.path, scope: "project", workspace: path("Dev/workspace-a").path, key: "missing-skill")
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.makeGlobal(skill: skill, confirmed: true)
+        }
+    }
+
+    func testMakeGlobalRejectsWhenGlobalTargetExists() async throws {
+        let source = path("Dev/workspace-a/.claude/skills/project-skill")
+        let target = path(".claude/skills/project-skill")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try "source".data(using: .utf8)?.write(to: source.appendingPathComponent("SKILL.md"))
+        try "target".data(using: .utf8)?.write(to: target.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: source.path, scope: "project", workspace: path("Dev/workspace-a").path, key: "project-skill")
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.makeGlobal(skill: skill, confirmed: true)
+        }
+    }
+
+    func testMakeGlobalMovesProjectSkillToGlobalAndResyncs() async throws {
+        let source = path("Dev/workspace-a/.claude/skills/project-skill")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "project".data(using: .utf8)?.write(to: source.appendingPathComponent("SKILL.md"))
+        configureEngine()
+
+        let engine = SyncEngine()
+        _ = try await engine.runSync(trigger: .manual)
+        let before = try XCTUnwrap(store.loadState().skills.first(where: { $0.skillKey == "project-skill" }))
+
+        let state = try await engine.makeGlobal(skill: before, confirmed: true)
+
+        let destination = path(".claude/skills/project-skill")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertTrue(state.skills.contains(where: { $0.skillKey == "project-skill" && $0.scope == "global" }))
+    }
+
     func testOpenAndRevealUseShellRunnerCommands() throws {
         let recorder = CommandRecorder()
         configureEngine(shellRunner: recorder)
@@ -322,18 +424,18 @@ final class SyncEngineTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func makeSkill(path: String) -> SkillRecord {
+    private func makeSkill(path: String, scope: String = "global", workspace: String? = nil, key: String = "sample") -> SkillRecord {
         SkillRecord(
             id: "id-\(UUID().uuidString)",
             name: "sample",
-            scope: "global",
-            workspace: nil,
+            scope: scope,
+            workspace: workspace,
             canonicalSourcePath: path,
             targetPaths: [],
             exists: true,
             isSymlinkCanonical: false,
             packageType: "dir",
-            skillKey: "sample",
+            skillKey: key,
             symlinkTarget: path
         )
     }

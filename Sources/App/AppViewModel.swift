@@ -5,6 +5,7 @@ protocol SyncEngineControlling {
     func openInZed(skill: SkillRecord) throws
     func revealInFinder(skill: SkillRecord) throws
     func deleteCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
+    func makeGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
 }
 
 extension SyncEngine: SyncEngineControlling { }
@@ -179,6 +180,27 @@ final class AppViewModel: ObservableObject {
                 localBanner = InlineBannerPresentation(
                     title: "Moved to Trash",
                     message: "\(skill.name) was moved to Trash.",
+                    symbol: "checkmark.circle.fill",
+                    role: .warning,
+                    recoveryActionTitle: nil
+                )
+            } catch {
+                load()
+                alertMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func makeGlobal(skill: SkillRecord) {
+        Task {
+            do {
+                let engine = makeEngine()
+                state = try await engine.makeGlobal(skill: skill, confirmed: true)
+                selectedSkillIDs.remove(skill.id)
+                pruneSelectionToCurrentSkills()
+                localBanner = InlineBannerPresentation(
+                    title: "Made global",
+                    message: "\(skill.name) was moved to global skills.",
                     symbol: "checkmark.circle.fill",
                     role: .warning,
                     recoveryActionTitle: nil
