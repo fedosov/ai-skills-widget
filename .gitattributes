@@ -1,0 +1,8 @@
+* text=auto
+
+# Treat generated binary assets as binary to avoid diff/merge corruption.
+*.png binary
+*.ico binary
+*.icns binary
+*.svg text
+*.json text
