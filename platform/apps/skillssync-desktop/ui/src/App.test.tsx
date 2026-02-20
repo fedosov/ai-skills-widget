@@ -77,6 +77,8 @@ function buildDetails(
     main_file_exists: true,
     main_file_body_preview: '# Preview',
     main_file_body_preview_truncated: false,
+    skill_dir_tree_preview: `${skill.skill_key}/\n\`-- SKILL.md`,
+    skill_dir_tree_preview_truncated: false,
     last_modified_unix_seconds: 1_700_000_000,
     ...overrides,
   }
@@ -310,6 +312,44 @@ describe('App critical actions', () => {
 
     const openFileButton = screen.getByRole('button', { name: 'Open file' })
     expect(openFileButton).toBeDisabled()
+  })
+
+  it('opens full skill file from truncated preview link', async () => {
+    const details = buildDetails(projectSkill, {
+      main_file_body_preview: '# Preview',
+      main_file_body_preview_truncated: true,
+    })
+    const state = buildState([projectSkill])
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: details,
+    })
+
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByRole('heading', { name: projectSkill.name })
+
+    expect(screen.getByText(/Preview truncated\./)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'watch full' }))
+
+    expect(tauriApi.openSkillPath).toHaveBeenCalledWith(projectSkill.skill_key, 'file')
+  })
+
+  it('renders compact skill dir tree and truncation note', async () => {
+    const details = buildDetails(projectSkill, {
+      skill_dir_tree_preview: 'project-skill/\n|-- references/\n`-- SKILL.md',
+      skill_dir_tree_preview_truncated: true,
+    })
+    const state = buildState([projectSkill])
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: details,
+    })
+
+    render(<App />)
+    await screen.findByRole('heading', { name: projectSkill.name })
+
+    expect(screen.getByText('SKILL dir tree')).toBeInTheDocument()
+    expect(screen.getByText(/project-skill\/[\s\S]*references\/[\s\S]*SKILL\.md/)).toBeInTheDocument()
+    expect(screen.getByText('Tree preview truncated for performance.')).toBeInTheDocument()
   })
 
   it('renames skill and trims title', async () => {

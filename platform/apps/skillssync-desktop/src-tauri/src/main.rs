@@ -5,10 +5,14 @@ use skillssync_core::{
     ScopeFilter, SkillLifecycleStatus, SkillLocator, SkillRecord, SyncEngine, SyncState,
     SyncTrigger,
 };
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
+
+const MAX_MAIN_FILE_PREVIEW_CHARS: usize = usize::MAX;
+const MAX_TREE_ENTRIES: usize = usize::MAX;
 
 #[derive(Debug, Clone, Serialize)]
 struct SkillDetails {
@@ -17,6 +21,8 @@ struct SkillDetails {
     main_file_exists: bool,
     main_file_body_preview: Option<String>,
     main_file_body_preview_truncated: bool,
+    skill_dir_tree_preview: Option<String>,
+    skill_dir_tree_preview_truncated: bool,
     last_modified_unix_seconds: Option<u64>,
 }
 
@@ -101,8 +107,12 @@ fn get_skill_details(skill_key: String) -> Result<SkillDetails, String> {
     let engine = SyncEngine::current();
     let skill = find_skill(&engine, &skill_key, None)?;
     let main_file = resolve_main_skill_file(&skill);
+    let skill_root = resolve_skill_root_dir(&skill, &main_file);
     let main_file_exists = main_file.exists();
-    let (main_file_body_preview, main_file_body_preview_truncated) = read_preview(&main_file, 4000);
+    let (main_file_body_preview, main_file_body_preview_truncated) =
+        read_preview(&main_file, MAX_MAIN_FILE_PREVIEW_CHARS);
+    let (skill_dir_tree_preview, skill_dir_tree_preview_truncated) =
+        read_skill_dir_tree(&skill_root, MAX_TREE_ENTRIES);
     let last_modified_unix_seconds = fs::metadata(&main_file)
         .ok()
         .and_then(|meta| meta.modified().ok())
@@ -115,6 +125,8 @@ fn get_skill_details(skill_key: String) -> Result<SkillDetails, String> {
         main_file_exists,
         main_file_body_preview,
         main_file_body_preview_truncated,
+        skill_dir_tree_preview,
+        skill_dir_tree_preview_truncated,
         last_modified_unix_seconds,
     })
 }
@@ -158,6 +170,16 @@ fn resolve_main_skill_file(skill: &SkillRecord) -> PathBuf {
     }
 }
 
+fn resolve_skill_root_dir(skill: &SkillRecord, main_file: &Path) -> PathBuf {
+    if skill.package_type == "dir" {
+        return PathBuf::from(&skill.canonical_source_path);
+    }
+    main_file
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(&skill.canonical_source_path))
+}
+
 fn read_preview(path: &Path, max_chars: usize) -> (Option<String>, bool) {
     let Ok(contents) = fs::read_to_string(path) else {
         return (None, false);
@@ -170,6 +192,112 @@ fn read_preview(path: &Path, max_chars: usize) -> (Option<String>, bool) {
 
     let preview = contents.chars().take(max_chars).collect::<String>();
     (Some(preview), true)
+}
+
+fn read_skill_dir_tree(root: &Path, max_entries: usize) -> (Option<String>, bool) {
+    if max_entries == 0 {
+        return (None, false);
+    }
+
+    let Ok(metadata) = fs::symlink_metadata(root) else {
+        return (None, false);
+    };
+    if !metadata.file_type().is_dir() {
+        return (None, false);
+    }
+
+    let mut lines = Vec::new();
+    let root_label = root
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| root.display().to_string());
+    lines.push(format!("{root_label}/"));
+
+    let mut emitted_entries: usize = 0;
+    let mut truncated = false;
+    render_tree_entries(
+        root,
+        "",
+        &mut lines,
+        max_entries,
+        &mut emitted_entries,
+        &mut truncated,
+    );
+
+    (Some(lines.join("\n")), truncated)
+}
+
+fn render_tree_entries(
+    dir: &Path,
+    prefix: &str,
+    lines: &mut Vec<String>,
+    max_entries: usize,
+    emitted_entries: &mut usize,
+    truncated: &mut bool,
+) {
+    if *truncated {
+        return;
+    }
+
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    let mut children: Vec<(String, bool, PathBuf)> = entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = fs::symlink_metadata(&path)
+                .map(|meta| meta.file_type().is_dir())
+                .unwrap_or(false);
+            (name, is_dir, path)
+        })
+        .collect();
+
+    children.sort_by(|lhs, rhs| match (lhs.1, rhs.1) {
+        (true, false) => Ordering::Less,
+        (false, true) => Ordering::Greater,
+        _ => lhs
+            .0
+            .to_lowercase()
+            .cmp(&rhs.0.to_lowercase())
+            .then_with(|| lhs.0.cmp(&rhs.0)),
+    });
+
+    let child_count = children.len();
+    for (index, (name, is_dir, path)) in children.into_iter().enumerate() {
+        if *emitted_entries >= max_entries {
+            *truncated = true;
+            return;
+        }
+
+        let is_last = index + 1 == child_count;
+        let branch = if is_last { "`-- " } else { "|-- " };
+        let label = if is_dir { format!("{name}/") } else { name };
+        lines.push(format!("{prefix}{branch}{label}"));
+        *emitted_entries += 1;
+
+        if is_dir {
+            let next_prefix = if is_last {
+                format!("{prefix}    ")
+            } else {
+                format!("{prefix}|   ")
+            };
+            render_tree_entries(
+                &path,
+                &next_prefix,
+                lines,
+                max_entries,
+                emitted_entries,
+                truncated,
+            );
+            if *truncated {
+                return;
+            }
+        }
+    }
 }
 
 fn open_path(path: &Path) -> Result<(), String> {
@@ -228,4 +356,50 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running skillssync desktop app");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_skill_dir_tree;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[test]
+    fn read_skill_dir_tree_returns_stable_ascii_structure() {
+        let tempdir = tempdir().expect("create temp dir");
+        let root = tempdir.path().join("alpha-skill");
+        fs::create_dir_all(root.join("references")).expect("create nested dir");
+        fs::write(root.join("SKILL.md"), "# Skill").expect("write SKILL.md");
+        fs::write(root.join("README.md"), "readme").expect("write README.md");
+        fs::write(root.join("references").join("notes.md"), "notes").expect("write nested file");
+
+        let (tree, truncated) = read_skill_dir_tree(Path::new(&root), 1000);
+
+        assert!(!truncated);
+        assert_eq!(
+            tree,
+            Some(String::from(
+                "alpha-skill/\n|-- references/\n|   `-- notes.md\n|-- README.md\n`-- SKILL.md"
+            ))
+        );
+    }
+
+    #[test]
+    fn read_skill_dir_tree_marks_truncation_when_limit_reached() {
+        let tempdir = tempdir().expect("create temp dir");
+        let root = tempdir.path().join("beta-skill");
+        fs::create_dir_all(&root).expect("create root");
+        fs::write(root.join("a.md"), "a").expect("write a");
+        fs::write(root.join("b.md"), "b").expect("write b");
+        fs::write(root.join("c.md"), "c").expect("write c");
+
+        let (tree, truncated) = read_skill_dir_tree(Path::new(&root), 2);
+
+        assert!(truncated);
+        assert_eq!(
+            tree,
+            Some(String::from("beta-skill/\n|-- a.md\n|-- b.md"))
+        );
+    }
 }

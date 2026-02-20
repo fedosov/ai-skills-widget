@@ -37,6 +37,8 @@ export type SkillDetails = {
   main_file_exists: boolean
   main_file_body_preview: string | null
   main_file_body_preview_truncated: boolean
+  skill_dir_tree_preview: string | null
+  skill_dir_tree_preview_truncated: boolean
   last_modified_unix_seconds: number | null
 }
 

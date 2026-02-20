@@ -495,12 +495,47 @@ export function App() {
                           {details.main_file_body_preview}
                         </pre>
                         {details.main_file_body_preview_truncated ? (
-                          <p className="text-[11px] text-muted-foreground">Preview truncated.</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Preview truncated.{' '}
+                            <button
+                              type="button"
+                              disabled={busy || !details.main_file_exists}
+                              className="underline underline-offset-2 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+                              onClick={() =>
+                                void handleOpenSkillPath(details.skill.skill_key, 'file')
+                              }
+                            >
+                              watch full
+                            </button>
+                            .
+                          </p>
                         ) : null}
                       </>
                     ) : (
                       <p className="text-xs text-muted-foreground">
                         No readable preview available.
+                      </p>
+                    )}
+                  </section>
+
+                  <section className="space-y-2 border-t border-border/80 pt-3">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      SKILL dir tree
+                    </h3>
+                    {details.skill_dir_tree_preview ? (
+                      <>
+                        <pre className="max-h-48 overflow-auto rounded-md border border-border/70 bg-muted/35 p-2 font-mono text-[11px] leading-relaxed">
+                          {details.skill_dir_tree_preview}
+                        </pre>
+                        {details.skill_dir_tree_preview_truncated ? (
+                          <p className="text-[11px] text-muted-foreground">
+                            Tree preview truncated for performance.
+                          </p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No readable directory tree available.
                       </p>
                     )}
                   </section>

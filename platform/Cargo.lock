@@ -3264,6 +3264,7 @@ dependencies = [
  "skillssync-core",
  "tauri",
  "tauri-build",
+ "tempfile",
 ]
 
 [[package]]
