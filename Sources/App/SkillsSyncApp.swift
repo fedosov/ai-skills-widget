@@ -71,10 +71,13 @@ private struct ContentView: View {
                 singleSelectedSkill: viewModel.singleSelectedSkill,
                 onOpen: viewModel.open,
                 onReveal: viewModel.reveal,
-                onDelete: viewModel.delete,
+                onMoveToTrash: viewModel.moveToTrash,
+                onArchive: viewModel.archive,
+                onRestoreToGlobal: viewModel.restoreToGlobal,
                 onMakeGlobal: viewModel.makeGlobal,
                 onRename: viewModel.rename,
-                onDeleteSelected: viewModel.deleteSelectedSkills,
+                onArchiveSelected: viewModel.archiveSelectedSkills,
+                onTrashSelected: viewModel.deleteSelectedSkills,
                 previewProvider: viewModel.preview,
                 validationProvider: viewModel.validation
             )
@@ -160,6 +163,23 @@ private struct SkillRowView: View {
         normalized(title) != normalized(skill.name)
     }
 
+    private var archivedStatusLine: String? {
+        guard skill.status == .archived else {
+            return nil
+        }
+        var problems: [String] = []
+        if !skill.exists {
+            problems.append("missing source")
+        }
+        if validation.hasWarnings {
+            problems.append("\(validation.issues.count) issue(s)")
+        }
+        if problems.isEmpty {
+            return "Archived"
+        }
+        return "Archived • \(problems.joined(separator: ", "))"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
             Text(title)
@@ -190,8 +210,15 @@ private struct SkillRowView: View {
                     .font(.app(.meta))
                     .foregroundStyle(.orange)
             }
+
+            if let archivedStatusLine {
+                Text(archivedStatusLine)
+                    .font(.app(.meta))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(.vertical, AppSpacing.xs)
+        .opacity(skill.status == .archived ? 0.72 : 1.0)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(skill.accessibilitySummary)
     }
@@ -206,10 +233,13 @@ private struct DetailPaneView: View {
     let singleSelectedSkill: SkillRecord?
     let onOpen: (SkillRecord) -> Void
     let onReveal: (SkillRecord) -> Void
-    let onDelete: (SkillRecord) -> Void
+    let onMoveToTrash: (SkillRecord) -> Void
+    let onArchive: (SkillRecord) -> Void
+    let onRestoreToGlobal: (SkillRecord) -> Void
     let onMakeGlobal: (SkillRecord) -> Void
     let onRename: (SkillRecord, String) -> Void
-    let onDeleteSelected: () -> Void
+    let onArchiveSelected: () -> Void
+    let onTrashSelected: () -> Void
     let previewProvider: (SkillRecord) async -> SkillPreviewData
     let validationProvider: (SkillRecord) -> SkillValidationResult
 
@@ -219,7 +249,9 @@ private struct DetailPaneView: View {
                 skill: singleSelectedSkill,
                 onOpen: onOpen,
                 onReveal: onReveal,
-                onDelete: onDelete,
+                onMoveToTrash: onMoveToTrash,
+                onArchive: onArchive,
+                onRestoreToGlobal: onRestoreToGlobal,
                 onMakeGlobal: onMakeGlobal,
                 onRename: onRename,
                 previewProvider: previewProvider,
@@ -228,7 +260,8 @@ private struct DetailPaneView: View {
         } else if selectedSkills.count > 1 {
             MultiSelectionDetailView(
                 selectedCount: selectedSkills.count,
-                onDeleteSelected: onDeleteSelected
+                onArchiveSelected: onArchiveSelected,
+                onTrashSelected: onTrashSelected
             )
         } else {
             ContentUnavailableView {
@@ -281,7 +314,9 @@ private struct SyncHealthToolbarControl: View {
 
 private struct MultiSelectionDetailView: View {
     let selectedCount: Int
-    let onDeleteSelected: () -> Void
+    let onArchiveSelected: () -> Void
+    let onTrashSelected: () -> Void
+    @State private var showArchiveConfirmation = false
     @State private var showDeleteConfirmation = false
 
     var body: some View {
@@ -294,6 +329,11 @@ private struct MultiSelectionDetailView: View {
             }
 
             Section {
+                Button("Archive Selected") {
+                    showArchiveConfirmation = true
+                }
+                .accessibilityLabel("Archive \(selectedCount) selected skills")
+
                 Button("Move Selected Sources to Trash", role: .destructive) {
                     showDeleteConfirmation = true
                 }
@@ -301,9 +341,21 @@ private struct MultiSelectionDetailView: View {
             } header: {
                 Text("Danger Zone")
             } footer: {
-                Text("This moves canonical sources to Trash. Some items may fail; successful deletions will still be applied.")
+                Text("You can archive selected active skills or move them to Trash. Archived items are skipped for batch archive.")
                     .font(.app(.secondary))
             }
+        }
+        .confirmationDialog(
+            "Archive \(selectedCount) selected skills?",
+            isPresented: $showArchiveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Archive") {
+                onArchiveSelected()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Selected active skills will be moved into the app archive.")
         }
         .confirmationDialog(
             "Move \(selectedCount) sources to Trash?",
@@ -311,7 +363,7 @@ private struct MultiSelectionDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Move to Trash", role: .destructive) {
-                onDeleteSelected()
+                onTrashSelected()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -325,12 +377,16 @@ private struct SkillDetailView: View {
     let skill: SkillRecord
     let onOpen: (SkillRecord) -> Void
     let onReveal: (SkillRecord) -> Void
-    let onDelete: (SkillRecord) -> Void
+    let onMoveToTrash: (SkillRecord) -> Void
+    let onArchive: (SkillRecord) -> Void
+    let onRestoreToGlobal: (SkillRecord) -> Void
     let onMakeGlobal: (SkillRecord) -> Void
     let onRename: (SkillRecord, String) -> Void
     let previewProvider: (SkillRecord) async -> SkillPreviewData
     let validationProvider: (SkillRecord) -> SkillValidationResult
     @State private var showDeleteConfirmation = false
+    @State private var showArchiveConfirmation = false
+    @State private var showRestoreConfirmation = false
     @State private var showMakeGlobalConfirmation = false
     @State private var showMakeGlobalSecondConfirmation = false
     @State private var previewData: SkillPreviewData?
@@ -348,6 +404,24 @@ private struct SkillDetailView: View {
             return false
         }
         return normalized(trimmed) != normalized(currentDisplayTitle)
+    }
+
+    private var archivedProblemsText: String? {
+        guard skill.status == .archived else {
+            return nil
+        }
+        let validation = validationProvider(skill)
+        var problems: [String] = []
+        if !skill.exists {
+            problems.append("Missing source")
+        }
+        if validation.hasWarnings {
+            problems.append("\(validation.issues.count) validation issue(s)")
+        }
+        guard !problems.isEmpty else {
+            return nil
+        }
+        return problems.joined(separator: ", ")
     }
 
     var body: some View {
@@ -371,6 +445,12 @@ private struct SkillDetailView: View {
                     .disabled(!canApplyTitle)
                 }
                 LabeledContent("Source status", value: skill.exists ? "Available" : "Missing")
+                if skill.status == .archived {
+                    LabeledContent("Status", value: "Archived")
+                    if let archivedProblemsText {
+                        LabeledContent("Problems", value: archivedProblemsText)
+                    }
+                }
                 LabeledContent("Package type", value: skill.packageType)
                 LabeledContent("Scope", value: skill.scopeTitle)
                 if let workspace = skill.workspace {
@@ -380,6 +460,17 @@ private struct SkillDetailView: View {
                             .textSelection(.enabled)
                             .multilineTextAlignment(.leading)
                             .lineLimit(nil)
+                    }
+                }
+                if skill.status == .archived {
+                    if let scope = skill.archivedOriginalScope {
+                        LabeledContent("Archived from scope", value: scope)
+                    }
+                    if let workspace = skill.archivedOriginalWorkspace {
+                        LabeledContent("Archived from workspace", value: workspace)
+                    }
+                    if let archivedAt = skill.archivedAt {
+                        LabeledContent("Archived at", value: archivedAt)
                     }
                 }
                 Divider()
@@ -467,21 +558,60 @@ private struct SkillDetailView: View {
             }
 
             Section {
-                if skill.scope == "project" {
-                    Button("Make Global", role: .destructive) {
-                        showMakeGlobalConfirmation = true
+                if skill.status == .archived {
+                    Button("Restore to Global") {
+                        showRestoreConfirmation = true
                     }
-                }
+                } else {
+                    if skill.scope == "project" {
+                        Button("Make Global", role: .destructive) {
+                            showMakeGlobalConfirmation = true
+                        }
+                    }
 
-                Button("Move Source to Trash", role: .destructive) {
-                    showDeleteConfirmation = true
+                    Button("Archive Source") {
+                        showArchiveConfirmation = true
+                    }
+
+                    Button("Move Source to Trash", role: .destructive) {
+                        showDeleteConfirmation = true
+                    }
                 }
             } header: {
                 Text("Danger Zone")
             } footer: {
-                Text("This moves the canonical source to Trash. You can restore it or run sync again to recreate it.")
-                    .font(.app(.secondary))
+                if skill.status == .archived {
+                    Text("Archived skills can only be restored into global skills.")
+                        .font(.app(.secondary))
+                } else {
+                    Text("Archive keeps a recoverable copy in app storage. Trash removes source to system Trash.")
+                        .font(.app(.secondary))
+                }
             }
+        }
+        .confirmationDialog(
+            "Restore archived skill to global?",
+            isPresented: $showRestoreConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore") {
+                onRestoreToGlobal(skill)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The archived skill source will be moved to global skills.")
+        }
+        .confirmationDialog(
+            "Archive source?",
+            isPresented: $showArchiveConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Archive") {
+                onArchive(skill)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The canonical source and existing symlinks will be moved to app archive storage.")
         }
         .confirmationDialog(
             "Make skill global?",
@@ -513,7 +643,7 @@ private struct SkillDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Move to Trash", role: .destructive) {
-                onDelete(skill)
+                onMoveToTrash(skill)
             }
             Button("Cancel", role: .cancel) { }
         } message: {
@@ -618,7 +748,6 @@ private struct SyncHealthPopoverContent: View {
                             Button("Remove Root") {
                                 onRemoveWorkspaceRoot(root)
                             }
-                            .buttonStyle(.borderless)
                         }
                     }
                 }

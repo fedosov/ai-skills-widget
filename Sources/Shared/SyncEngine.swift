@@ -5,6 +5,8 @@ enum SyncTrigger {
     case manual
     case widget
     case delete
+    case archive
+    case restore
     case makeGlobal
     case rename
     case autoFilesystem
@@ -16,6 +18,18 @@ enum SyncEngineError: LocalizedError {
     case deletionBlockedProtectedPath
     case deletionOutsideAllowedRoots
     case deletionTargetMissing
+    case archiveRequiresConfirmation
+    case archiveOnlyForActiveSkill
+    case archiveBlockedProtectedPath
+    case archiveOutsideAllowedRoots
+    case archiveSourceMissing
+    case archiveManifestWriteFailed
+    case restoreRequiresConfirmation
+    case restoreOnlyForArchivedSkill
+    case restoreBundleMissing
+    case restoreManifestMissing
+    case restoreSourceMissing
+    case restoreTargetExists
     case makeGlobalRequiresConfirmation
     case makeGlobalOnlyForProject
     case makeGlobalBlockedProtectedPath
@@ -42,6 +56,30 @@ enum SyncEngineError: LocalizedError {
             return "Deletion blocked: target outside allowed roots"
         case .deletionTargetMissing:
             return "Deletion target does not exist"
+        case .archiveRequiresConfirmation:
+            return "archive_canonical_source requires confirmed=true"
+        case .archiveOnlyForActiveSkill:
+            return "archive_canonical_source is only allowed for active skills"
+        case .archiveBlockedProtectedPath:
+            return "Archive blocked for protected path"
+        case .archiveOutsideAllowedRoots:
+            return "Archive blocked: source outside allowed roots"
+        case .archiveSourceMissing:
+            return "Archive source does not exist"
+        case .archiveManifestWriteFailed:
+            return "Archive manifest write failed"
+        case .restoreRequiresConfirmation:
+            return "restore_archived_skill_to_global requires confirmed=true"
+        case .restoreOnlyForArchivedSkill:
+            return "restore_archived_skill_to_global is only allowed for archived skills"
+        case .restoreBundleMissing:
+            return "Archived bundle path is missing"
+        case .restoreManifestMissing:
+            return "Archived manifest is missing or invalid"
+        case .restoreSourceMissing:
+            return "Archived source payload is missing"
+        case .restoreTargetExists:
+            return "Restore target already exists"
         case .makeGlobalRequiresConfirmation:
             return "make_global requires confirmed=true"
         case .makeGlobalOnlyForProject:
@@ -140,6 +178,28 @@ private struct SkillPackage {
 private struct SyncCoreResult {
     let entries: [SkillRecord]
     let conflictCount: Int
+}
+
+private struct ArchivedSkillManifest: Codable {
+    let version: Int
+    let archivedAt: String
+    let skillKey: String
+    let name: String
+    let originalScope: String
+    let originalWorkspace: String?
+    let originalCanonicalSourcePath: String
+    let movedLinks: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case archivedAt = "archived_at"
+        case skillKey = "skill_key"
+        case name
+        case originalScope = "original_scope"
+        case originalWorkspace = "original_workspace"
+        case originalCanonicalSourcePath = "original_canonical_source_path"
+        case movedLinks = "moved_links"
+    }
 }
 
 private enum MigrationRollbackOperation {
@@ -246,6 +306,110 @@ struct SyncEngine {
 
         _ = try moveToTrash(target)
         return try await runSync(trigger: .delete)
+    }
+
+    func archiveCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
+        guard confirmed else {
+            throw SyncEngineError.archiveRequiresConfirmation
+        }
+        guard skill.status == .active else {
+            throw SyncEngineError.archiveOnlyForActiveSkill
+        }
+
+        let source = URL(fileURLWithPath: skill.canonicalSourcePath, isDirectory: true)
+        if isProtectedPath(source) {
+            throw SyncEngineError.archiveBlockedProtectedPath
+        }
+
+        let roots = allowedDeleteRoots(workspaces: workspaceCandidates())
+        let isAllowed = roots.contains { isRelativeTo(source, base: $0) }
+        guard isAllowed else {
+            throw SyncEngineError.archiveOutsideAllowedRoots
+        }
+
+        let sourceExists = fileManager.fileExists(atPath: source.path) || source.isSymbolicLink
+        guard sourceExists else {
+            throw SyncEngineError.archiveSourceMissing
+        }
+
+        let archivedAt = iso8601(Date())
+        let bundle = archivesRoot().appendingPathComponent(makeArchiveBundleName(skillKey: skill.skillKey), isDirectory: true)
+        let sourceArchivePath = bundle.appendingPathComponent("source", isDirectory: true)
+        let linksArchivePath = bundle.appendingPathComponent("links", isDirectory: true)
+        try fileManager.createDirectory(at: linksArchivePath, withIntermediateDirectories: true)
+
+        var moveOps: [(from: URL, to: URL)] = []
+        do {
+            try fileManager.moveItem(at: source, to: sourceArchivePath)
+            moveOps.append((from: source, to: sourceArchivePath))
+
+            var movedLinks: [String] = []
+            var usedLinkNames: Set<String> = []
+            for targetPath in skill.targetPaths {
+                let target = URL(fileURLWithPath: targetPath, isDirectory: true)
+                if standardizedPath(target) == standardizedPath(source) {
+                    continue
+                }
+                guard target.isSymbolicLink else {
+                    continue
+                }
+
+                let archivedLink = uniqueArchivedLinkPath(baseName: target.lastPathComponent, linksRoot: linksArchivePath, used: &usedLinkNames)
+                try fileManager.moveItem(at: target, to: archivedLink)
+                moveOps.append((from: target, to: archivedLink))
+                movedLinks.append(target.path)
+            }
+
+            let manifest = ArchivedSkillManifest(
+                version: 1,
+                archivedAt: archivedAt,
+                skillKey: skill.skillKey,
+                name: skill.name,
+                originalScope: skill.scope,
+                originalWorkspace: skill.workspace,
+                originalCanonicalSourcePath: source.path,
+                movedLinks: movedLinks.sorted()
+            )
+            try writeArchivedManifest(manifest, bundle: bundle)
+        } catch {
+            rollbackArchiveMoves(moveOps)
+            try? fileManager.removeItem(at: bundle)
+            throw error
+        }
+
+        return try await runSync(trigger: .archive)
+    }
+
+    func restoreArchivedSkillToGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
+        guard confirmed else {
+            throw SyncEngineError.restoreRequiresConfirmation
+        }
+        guard skill.status == .archived else {
+            throw SyncEngineError.restoreOnlyForArchivedSkill
+        }
+
+        guard let bundlePath = skill.archivedBundlePath else {
+            throw SyncEngineError.restoreBundleMissing
+        }
+        let bundle = URL(fileURLWithPath: bundlePath, isDirectory: true)
+        let source = bundle.appendingPathComponent("source", isDirectory: true)
+        let sourceExists = fileManager.fileExists(atPath: source.path) || source.isSymbolicLink
+        guard sourceExists else {
+            throw SyncEngineError.restoreSourceMissing
+        }
+
+        let manifest = try readArchivedManifest(bundle: bundle)
+        let destination = preferredGlobalDestination(for: manifest.skillKey)
+        let destinationExists = fileManager.fileExists(atPath: destination.path) || destination.isSymbolicLink
+        guard !destinationExists else {
+            throw SyncEngineError.restoreTargetExists
+        }
+
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.moveItem(at: source, to: destination)
+        try? fileManager.removeItem(at: bundle)
+
+        return try await runSync(trigger: .restore)
     }
 
     func makeGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
@@ -468,6 +632,7 @@ struct SyncEngine {
         cleanupStaleLinks(oldManagedLinks: oldManagedLinks, newManagedLinks: newManagedLinks)
         saveManagedLinksManifest(newManagedLinks)
 
+        entries += loadArchivedEntries()
         return SyncCoreResult(entries: entries.sorted(by: sortEntries), conflictCount: 0)
     }
 
@@ -517,8 +682,8 @@ struct SyncEngine {
                 error: error
             ),
             summary: SyncSummary(
-                globalCount: entries.filter { $0.scope == "global" }.count,
-                projectCount: entries.filter { $0.scope == "project" }.count,
+                globalCount: entries.filter { $0.scope == "global" && $0.status == .active }.count,
+                projectCount: entries.filter { $0.scope == "project" && $0.status == .active }.count,
                 conflictCount: conflictCount
             ),
             skills: entries,
@@ -1012,6 +1177,7 @@ struct SyncEngine {
             claudeSkillsRoot(),
             agentsSkillsRoot(),
             codexSkillsRoot(),
+            archivesRoot(),
             runtimeSkillsRoot(),
             runtimePromptsRoot(),
             environment.runtimeDirectory
@@ -1181,6 +1347,9 @@ struct SyncEngine {
     }
 
     private func sortEntries(lhs: SkillRecord, rhs: SkillRecord) -> Bool {
+        if lhs.status != rhs.status {
+            return lhs.status == .active
+        }
         if lhs.scope != rhs.scope {
             return lhs.scope == "global"
         }
@@ -1200,6 +1369,10 @@ struct SyncEngine {
 
     private func codexSkillsRoot() -> URL {
         environment.homeDirectory.appendingPathComponent(".codex/skills", isDirectory: true)
+    }
+
+    private func archivesRoot() -> URL {
+        environment.runtimeDirectory.appendingPathComponent("archives", isDirectory: true)
     }
 
     private func runtimeSkillsRoot() -> URL {
@@ -1348,6 +1521,106 @@ struct SyncEngine {
     private func sha1Hex(_ value: String) -> String {
         let digest = Insecure.SHA1.hash(data: Data(value.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func makeArchiveBundleName(skillKey: String) -> String {
+        let safeKey = skillKey.replacingOccurrences(of: "/", with: "--")
+        let compact = iso8601(Date()).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "")
+        let shortID = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)
+        return "\(compact)-\(safeKey)-\(shortID)"
+    }
+
+    private func uniqueArchivedLinkPath(baseName: String, linksRoot: URL, used: inout Set<String>) -> URL {
+        let trimmed = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let root = trimmed.isEmpty ? "link" : trimmed
+        var candidate = root
+        var index = 1
+        while used.contains(candidate) || fileManager.fileExists(atPath: linksRoot.appendingPathComponent(candidate).path) {
+            candidate = "\(root)-\(index)"
+            index += 1
+        }
+        used.insert(candidate)
+        return linksRoot.appendingPathComponent(candidate)
+    }
+
+    private func rollbackArchiveMoves(_ operations: [(from: URL, to: URL)]) {
+        for operation in operations.reversed() {
+            let destinationExists = fileManager.fileExists(atPath: operation.to.path) || operation.to.isSymbolicLink
+            if destinationExists {
+                try? fileManager.moveItem(at: operation.to, to: operation.from)
+            }
+        }
+    }
+
+    private func writeArchivedManifest(_ manifest: ArchivedSkillManifest, bundle: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(manifest)
+        try data.write(to: bundle.appendingPathComponent("manifest.json"), options: [.atomic])
+    }
+
+    private func readArchivedManifest(bundle: URL) throws -> ArchivedSkillManifest {
+        let url = bundle.appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw SyncEngineError.restoreManifestMissing
+        }
+        let data = try Data(contentsOf: url)
+        do {
+            return try JSONDecoder().decode(ArchivedSkillManifest.self, from: data)
+        } catch {
+            throw SyncEngineError.restoreManifestMissing
+        }
+    }
+
+    private func loadArchivedEntries() -> [SkillRecord] {
+        guard fileManager.fileExists(atPath: archivesRoot().path) else {
+            return []
+        }
+        guard let bundles = try? fileManager.contentsOfDirectory(
+            at: archivesRoot(),
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var entries: [SkillRecord] = []
+        for bundle in bundles {
+            let values = try? bundle.resourceValues(forKeys: [.isDirectoryKey])
+            guard values?.isDirectory == true else {
+                continue
+            }
+            guard let manifest = try? readArchivedManifest(bundle: bundle) else {
+                continue
+            }
+
+            let source = bundle.appendingPathComponent("source", isDirectory: true)
+            let exists = fileManager.fileExists(atPath: source.path) || source.isSymbolicLink
+            let scope = manifest.originalScope.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedScope = scope.isEmpty ? "global" : scope
+
+            entries.append(
+                SkillRecord(
+                    id: skillEntryID(scope: "archived", workspace: bundle.path, skillKey: manifest.skillKey),
+                    name: manifest.name,
+                    scope: normalizedScope,
+                    workspace: manifest.originalWorkspace,
+                    canonicalSourcePath: source.path,
+                    targetPaths: manifest.movedLinks,
+                    exists: exists,
+                    isSymlinkCanonical: source.isSymbolicLink,
+                    packageType: "dir",
+                    skillKey: manifest.skillKey,
+                    symlinkTarget: source.path,
+                    status: .archived,
+                    archivedAt: manifest.archivedAt,
+                    archivedBundlePath: bundle.path,
+                    archivedOriginalScope: manifest.originalScope,
+                    archivedOriginalWorkspace: manifest.originalWorkspace
+                )
+            )
+        }
+        return entries
     }
 }
 

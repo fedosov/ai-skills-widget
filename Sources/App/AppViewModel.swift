@@ -4,6 +4,7 @@ enum SidebarSkillGroupKind: Hashable {
     case global
     case project(name: String)
     case unknownProject
+    case archived
 }
 
 struct SidebarSkillGroup: Identifiable, Hashable {
@@ -18,6 +19,8 @@ protocol SyncEngineControlling {
     func openInZed(skill: SkillRecord) throws
     func revealInFinder(skill: SkillRecord) throws
     func deleteCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
+    func archiveCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
+    func restoreArchivedSkillToGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
     func makeGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState
     func renameSkill(skill: SkillRecord, newTitle: String) async throws -> SyncState
 }
@@ -141,8 +144,13 @@ final class AppViewModel: ObservableObject {
         var globalSkills: [SkillRecord] = []
         var projectSkillsByName: [String: [SkillRecord]] = [:]
         var unknownProjectSkills: [SkillRecord] = []
+        var archivedSkills: [SkillRecord] = []
 
         for skill in skills {
+            if skill.status == .archived {
+                archivedSkills.append(skill)
+                continue
+            }
             if skill.scope == "project" {
                 if let projectName = projectName(from: skill.workspace) {
                     projectSkillsByName[projectName, default: []].append(skill)
@@ -194,18 +202,39 @@ final class AppViewModel: ObservableObject {
             )
         }
 
+        if !archivedSkills.isEmpty {
+            let sorted = sortSkillsForSidebar(archivedSkills)
+            groups.append(
+                SidebarSkillGroup(
+                    id: "archived",
+                    title: "Archived Skills (\(sorted.count))",
+                    skills: sorted,
+                    kind: .archived
+                )
+            )
+        }
+
         return groups
     }
 
     nonisolated static func applyFilters(to skills: [SkillRecord], query: String, scopeFilter: ScopeFilter) -> [SkillRecord] {
         let base = skills.sorted { lhs, rhs in
+            if lhs.status != rhs.status {
+                return lhs.status == .active
+            }
             if lhs.scope != rhs.scope {
                 return lhs.scope == "global"
             }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
 
-        let scoped = base.filter(scopeFilter.includes)
+        let statusFiltered: [SkillRecord]
+        if scopeFilter == .all {
+            statusFiltered = base
+        } else {
+            statusFiltered = base.filter { $0.status == .active }
+        }
+        let scoped = statusFiltered.filter(scopeFilter.includes)
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             return scoped
@@ -258,6 +287,7 @@ final class AppViewModel: ObservableObject {
     func stop() {
         autoSyncCoordinator?.stop()
         autoSyncCoordinator = nil
+        saveUIStateNow(sidebarWidth: nil)
         pendingUIPreferencesSave?.cancel()
         pendingUIPreferencesSave = nil
         pendingAutoSyncWorkItem?.cancel()
@@ -336,7 +366,7 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func delete(skill: SkillRecord) {
+    func moveToTrash(skill: SkillRecord) {
         Task {
             do {
                 let engine = makeEngine()
@@ -348,6 +378,48 @@ final class AppViewModel: ObservableObject {
                     message: "\(skill.name) was moved to Trash.",
                     symbol: "checkmark.circle.fill",
                     role: .warning,
+                    recoveryActionTitle: nil
+                )
+            } catch {
+                load()
+                alertMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func archive(skill: SkillRecord) {
+        Task {
+            do {
+                let engine = makeEngine()
+                state = try await engine.archiveCanonicalSource(skill: skill, confirmed: true)
+                selectedSkillIDs.remove(skill.id)
+                pruneSelectionToCurrentSkills()
+                localBanner = InlineBannerPresentation(
+                    title: "Archived",
+                    message: "\(skill.name) was archived.",
+                    symbol: "archivebox.fill",
+                    role: .warning,
+                    recoveryActionTitle: nil
+                )
+            } catch {
+                load()
+                alertMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func restoreToGlobal(skill: SkillRecord) {
+        Task {
+            do {
+                let engine = makeEngine()
+                state = try await engine.restoreArchivedSkillToGlobal(skill: skill, confirmed: true)
+                selectedSkillIDs.remove(skill.id)
+                pruneSelectionToCurrentSkills()
+                localBanner = InlineBannerPresentation(
+                    title: "Restored",
+                    message: "\(skill.name) was restored to global skills.",
+                    symbol: "arrow.uturn.backward.circle.fill",
+                    role: .success,
                     recoveryActionTitle: nil
                 )
             } catch {
@@ -411,7 +483,13 @@ final class AppViewModel: ObservableObject {
 
     func deleteSelectedSkills() {
         Task {
-            await deleteSelectedSkillsNow()
+            await trashSelectedSkillsNow()
+        }
+    }
+
+    func archiveSelectedSkills() {
+        Task {
+            await archiveSelectedSkillsNow()
         }
     }
 
@@ -428,29 +506,29 @@ final class AppViewModel: ObservableObject {
         workspaceDiscoveryRoots.removeAll(where: { $0 == normalized })
     }
 
-    func deleteSelectedSkillsNow() async {
-        let skillsToDelete = selectedSkills
-        guard !skillsToDelete.isEmpty else {
+    func trashSelectedSkillsNow() async {
+        let skillsToTrash = selectedSkills.filter { $0.status == .active }
+        guard !skillsToTrash.isEmpty else {
             return
         }
 
-        let total = skillsToDelete.count
+        let total = skillsToTrash.count
         var successCount = 0
-        var deletedIDs: Set<String> = []
+        var removedIDs: Set<String> = []
         var failures: [(name: String, error: String)] = []
 
-        for skill in skillsToDelete {
+        for skill in skillsToTrash {
             do {
                 let engine = makeEngine()
                 state = try await engine.deleteCanonicalSource(skill: skill, confirmed: true)
                 successCount += 1
-                deletedIDs.insert(skill.id)
+                removedIDs.insert(skill.id)
             } catch {
                 failures.append((name: skill.name, error: error.localizedDescription))
             }
         }
 
-        selectedSkillIDs.subtract(deletedIDs)
+        selectedSkillIDs.subtract(removedIDs)
         pruneSelectionToCurrentSkills()
 
         if successCount > 0 {
@@ -469,6 +547,74 @@ final class AppViewModel: ObservableObject {
             return
         }
         alertMessage = bulkDeleteFailureMessage(total: total, failures: failures)
+    }
+
+    func archiveSelectedSkillsNow() async {
+        let selected = selectedSkills
+        guard !selected.isEmpty else {
+            return
+        }
+
+        let skillsToArchive = selected.filter { $0.status == .active }
+        let skippedArchived = selected.count - skillsToArchive.count
+        guard !skillsToArchive.isEmpty else {
+            localBanner = InlineBannerPresentation(
+                title: "Nothing to archive",
+                message: "Only active skills can be archived.",
+                symbol: "archivebox",
+                role: .info,
+                recoveryActionTitle: nil
+            )
+            return
+        }
+
+        let total = skillsToArchive.count
+        var successCount = 0
+        var archivedIDs: Set<String> = []
+        var failures: [(name: String, error: String)] = []
+
+        for skill in skillsToArchive {
+            do {
+                let engine = makeEngine()
+                state = try await engine.archiveCanonicalSource(skill: skill, confirmed: true)
+                successCount += 1
+                archivedIDs.insert(skill.id)
+            } catch {
+                failures.append((name: skill.name, error: error.localizedDescription))
+            }
+        }
+
+        selectedSkillIDs.subtract(archivedIDs)
+        pruneSelectionToCurrentSkills()
+
+        if successCount > 0 {
+            var message = "Archived \(successCount) of \(total) selected skills."
+            if skippedArchived > 0 {
+                message += " Skipped \(skippedArchived) already archived."
+            }
+            localBanner = InlineBannerPresentation(
+                title: "Archived",
+                message: message,
+                symbol: "archivebox.fill",
+                role: failures.isEmpty ? .warning : .info,
+                recoveryActionTitle: nil
+            )
+        } else {
+            localBanner = nil
+        }
+
+        guard !failures.isEmpty else {
+            return
+        }
+        alertMessage = bulkDeleteFailureMessage(total: total, failures: failures)
+    }
+
+    func delete(skill: SkillRecord) {
+        moveToTrash(skill: skill)
+    }
+
+    func deleteSelectedSkillsNow() async {
+        await trashSelectedSkillsNow()
     }
 
     private func bulkDeleteFailureMessage(total: Int, failures: [(name: String, error: String)]) -> String {

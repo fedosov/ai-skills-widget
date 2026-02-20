@@ -383,6 +383,125 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertTrue(trashed.contains(where: { $0.hasPrefix("delete-ok") }))
     }
 
+    func testArchiveCanonicalSourceRequiresConfirmedTrue() async throws {
+        let source = path(".claude/skills/archive-me")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: source.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: source.path)
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.archiveCanonicalSource(skill: skill, confirmed: false)
+        }
+    }
+
+    func testArchiveCanonicalSourceRejectsOutsideAllowedRoots() async throws {
+        let outside = path("outside/archive-me")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: outside.appendingPathComponent("SKILL.md"))
+
+        configureEngine()
+        let engine = SyncEngine()
+        let skill = makeSkill(path: outside.path)
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.archiveCanonicalSource(skill: skill, confirmed: true)
+        }
+    }
+
+    func testArchiveCanonicalSourceMovesSourceAndSymlinksToArchiveBundle() async throws {
+        let source = path(".claude/skills/archive-ok")
+        let agentsLink = path(".agents/skills/archive-ok")
+        let codexLink = path(".codex/skills/archive-ok")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "body".data(using: .utf8)?.write(to: source.appendingPathComponent("SKILL.md"))
+        try FileManager.default.createDirectory(at: agentsLink.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: codexLink.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: agentsLink, withDestinationURL: source)
+        try FileManager.default.createSymbolicLink(at: codexLink, withDestinationURL: source)
+        configureEngine()
+
+        let engine = SyncEngine()
+        _ = try await engine.runSync(trigger: .manual)
+        let before = try XCTUnwrap(store.loadState().skills.first(where: { $0.skillKey == "archive-ok" }))
+
+        let state = try await engine.archiveCanonicalSource(skill: before, confirmed: true)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(state.skills.contains(where: { $0.skillKey == "archive-ok" && $0.status == .archived }))
+
+        let archivesRoot = runtimeDir.appendingPathComponent("archives", isDirectory: true)
+        let bundles = try FileManager.default.contentsOfDirectory(at: archivesRoot, includingPropertiesForKeys: nil)
+        XCTAssertEqual(bundles.count, 1)
+        let bundle = try XCTUnwrap(bundles.first)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.appendingPathComponent("source/SKILL.md").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: bundle.appendingPathComponent("manifest.json").path))
+
+        let movedLinks = try FileManager.default.contentsOfDirectory(
+            at: bundle.appendingPathComponent("links", isDirectory: true),
+            includingPropertiesForKeys: nil
+        )
+        XCTAssertEqual(movedLinks.count, 2)
+    }
+
+    func testRunSyncIncludesArchivedSkillsFromArchiveDirectory() async throws {
+        _ = try writeArchivedBundle(skillKey: "from-archive", name: "from-archive")
+        configureEngine()
+
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+
+        let archived = try XCTUnwrap(state.skills.first(where: { $0.skillKey == "from-archive" }))
+        XCTAssertEqual(archived.status, .archived)
+        XCTAssertEqual(archived.scope, "global")
+        XCTAssertEqual(state.summary.globalCount, 0)
+    }
+
+    func testRestoreArchivedSkillToGlobalRequiresArchivedStatus() async throws {
+        let source = path(".claude/skills/not-archived")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: source.appendingPathComponent("SKILL.md"))
+        configureEngine()
+
+        let engine = SyncEngine()
+        let skill = makeSkill(path: source.path, key: "not-archived", status: .active)
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.restoreArchivedSkillToGlobal(skill: skill, confirmed: true)
+        }
+    }
+
+    func testRestoreArchivedSkillToGlobalMovesToClaudeRootAndResyncs() async throws {
+        let bundle = try writeArchivedBundle(skillKey: "restore-me", name: "restore-me")
+        configureEngine()
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+        let archived = try XCTUnwrap(state.skills.first(where: { $0.skillKey == "restore-me" }))
+
+        let restoredState = try await engine.restoreArchivedSkillToGlobal(skill: archived, confirmed: true)
+        let destination = path(".claude/skills/restore-me")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: bundle.path))
+        XCTAssertTrue(restoredState.skills.contains(where: { $0.skillKey == "restore-me" && $0.status == .active }))
+    }
+
+    func testRestoreArchivedSkillToGlobalRejectsWhenTargetExists() async throws {
+        _ = try writeArchivedBundle(skillKey: "conflict", name: "conflict")
+        let destination = path(".claude/skills/conflict")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try "x".data(using: .utf8)?.write(to: destination.appendingPathComponent("SKILL.md"))
+        configureEngine()
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+        let archived = try XCTUnwrap(state.skills.first(where: { $0.skillKey == "conflict" }))
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.restoreArchivedSkillToGlobal(skill: archived, confirmed: true)
+        }
+    }
+
     func testMakeGlobalRequiresConfirmedTrue() async throws {
         let projectSkill = path("Dev/workspace-a/.claude/skills/project-skill")
         try FileManager.default.createDirectory(at: projectSkill, withIntermediateDirectories: true)
@@ -736,7 +855,46 @@ final class SyncEngineTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func makeSkill(path: String, scope: String = "global", workspace: String? = nil, key: String = "sample") -> SkillRecord {
+    private func writeArchivedBundle(
+        skillKey: String,
+        name: String,
+        originalScope: String = "global",
+        originalWorkspace: String? = nil
+    ) throws -> URL {
+        let archivesRoot = runtimeDir.appendingPathComponent("archives", isDirectory: true)
+        let bundle = archivesRoot.appendingPathComponent("20260220T120000-\(skillKey)-test", isDirectory: true)
+        let sourceDir = bundle.appendingPathComponent("source", isDirectory: true)
+        let linksDir = bundle.appendingPathComponent("links", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: linksDir, withIntermediateDirectories: true)
+        try "archived".data(using: .utf8)?.write(to: sourceDir.appendingPathComponent("SKILL.md"))
+        try FileManager.default.createSymbolicLink(
+            at: linksDir.appendingPathComponent("link-1"),
+            withDestinationURL: sourceDir
+        )
+
+        let manifest: [String: Any] = [
+            "version": 1,
+            "archived_at": "2026-02-20T12:00:00Z",
+            "skill_key": skillKey,
+            "name": name,
+            "original_scope": originalScope,
+            "original_workspace": originalWorkspace as Any,
+            "original_canonical_source_path": "/tmp/\(skillKey)",
+            "moved_links": ["/tmp/link-a", "/tmp/link-b"]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+        try data.write(to: bundle.appendingPathComponent("manifest.json"))
+        return bundle
+    }
+
+    private func makeSkill(
+        path: String,
+        scope: String = "global",
+        workspace: String? = nil,
+        key: String = "sample",
+        status: SkillLifecycleStatus = .active
+    ) -> SkillRecord {
         SkillRecord(
             id: "id-\(UUID().uuidString)",
             name: "sample",
@@ -748,7 +906,12 @@ final class SyncEngineTests: XCTestCase {
             isSymlinkCanonical: false,
             packageType: "dir",
             skillKey: key,
-            symlinkTarget: path
+            symlinkTarget: path,
+            status: status,
+            archivedAt: nil,
+            archivedBundlePath: nil,
+            archivedOriginalScope: nil,
+            archivedOriginalWorkspace: nil
         )
     }
 }

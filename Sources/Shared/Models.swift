@@ -72,6 +72,11 @@ struct SyncSummary: Codable {
     static let empty = SyncSummary(globalCount: 0, projectCount: 0, conflictCount: 0)
 }
 
+enum SkillLifecycleStatus: String, Codable, Hashable {
+    case active
+    case archived
+}
+
 struct SkillRecord: Codable, Identifiable, Hashable {
     let id: String
     let name: String
@@ -84,6 +89,11 @@ struct SkillRecord: Codable, Identifiable, Hashable {
     let packageType: String
     let skillKey: String
     let symlinkTarget: String
+    let status: SkillLifecycleStatus
+    let archivedAt: String?
+    let archivedBundlePath: String?
+    let archivedOriginalScope: String?
+    let archivedOriginalWorkspace: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -97,6 +107,67 @@ struct SkillRecord: Codable, Identifiable, Hashable {
         case packageType = "package_type"
         case skillKey = "skill_key"
         case symlinkTarget = "symlink_target"
+        case status
+        case archivedAt = "archived_at"
+        case archivedBundlePath = "archived_bundle_path"
+        case archivedOriginalScope = "archived_original_scope"
+        case archivedOriginalWorkspace = "archived_original_workspace"
+    }
+
+    init(
+        id: String,
+        name: String,
+        scope: String,
+        workspace: String?,
+        canonicalSourcePath: String,
+        targetPaths: [String],
+        exists: Bool,
+        isSymlinkCanonical: Bool,
+        packageType: String,
+        skillKey: String,
+        symlinkTarget: String,
+        status: SkillLifecycleStatus = .active,
+        archivedAt: String? = nil,
+        archivedBundlePath: String? = nil,
+        archivedOriginalScope: String? = nil,
+        archivedOriginalWorkspace: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.scope = scope
+        self.workspace = workspace
+        self.canonicalSourcePath = canonicalSourcePath
+        self.targetPaths = targetPaths
+        self.exists = exists
+        self.isSymlinkCanonical = isSymlinkCanonical
+        self.packageType = packageType
+        self.skillKey = skillKey
+        self.symlinkTarget = symlinkTarget
+        self.status = status
+        self.archivedAt = archivedAt
+        self.archivedBundlePath = archivedBundlePath
+        self.archivedOriginalScope = archivedOriginalScope
+        self.archivedOriginalWorkspace = archivedOriginalWorkspace
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        scope = try container.decode(String.self, forKey: .scope)
+        workspace = try container.decodeIfPresent(String.self, forKey: .workspace)
+        canonicalSourcePath = try container.decode(String.self, forKey: .canonicalSourcePath)
+        targetPaths = try container.decode([String].self, forKey: .targetPaths)
+        exists = try container.decode(Bool.self, forKey: .exists)
+        isSymlinkCanonical = try container.decode(Bool.self, forKey: .isSymlinkCanonical)
+        packageType = try container.decode(String.self, forKey: .packageType)
+        skillKey = try container.decode(String.self, forKey: .skillKey)
+        symlinkTarget = try container.decode(String.self, forKey: .symlinkTarget)
+        status = try container.decodeIfPresent(SkillLifecycleStatus.self, forKey: .status) ?? .active
+        archivedAt = try container.decodeIfPresent(String.self, forKey: .archivedAt)
+        archivedBundlePath = try container.decodeIfPresent(String.self, forKey: .archivedBundlePath)
+        archivedOriginalScope = try container.decodeIfPresent(String.self, forKey: .archivedOriginalScope)
+        archivedOriginalWorkspace = try container.decodeIfPresent(String.self, forKey: .archivedOriginalWorkspace)
     }
 }
 

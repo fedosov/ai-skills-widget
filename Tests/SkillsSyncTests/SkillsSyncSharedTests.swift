@@ -63,6 +63,61 @@ final class SkillsSyncSharedTests: XCTestCase {
         XCTAssertEqual(state.summary.globalCount, 2)
         XCTAssertEqual(state.skills.count, 1)
         XCTAssertEqual(state.topSkills.first, "skill-1")
+        XCTAssertEqual(state.skills.first?.status, .active)
+        XCTAssertNil(state.skills.first?.archivedAt)
+    }
+
+    func testLoadStateDecodingForArchivedSkill() throws {
+        let payload = """
+        {
+          "version": 1,
+          "generated_at": "2026-01-01T00:00:00Z",
+          "sync": {
+            "status": "ok",
+            "last_started_at": "2026-01-01T00:00:00Z",
+            "last_finished_at": "2026-01-01T00:00:05Z",
+            "duration_ms": 5000,
+            "error": null
+          },
+          "summary": {
+            "global_count": 0,
+            "project_count": 0,
+            "conflict_count": 0
+          },
+          "skills": [
+            {
+              "id": "skill-arch-1",
+              "name": "archived",
+              "scope": "global",
+              "workspace": null,
+              "canonical_source_path": "/tmp/archive/source",
+              "target_paths": ["/tmp/t1"],
+              "exists": true,
+              "is_symlink_canonical": false,
+              "package_type": "dir",
+              "skill_key": "archived",
+              "symlink_target": "/tmp/archive/source",
+              "status": "archived",
+              "archived_at": "2026-02-20T12:00:00Z",
+              "archived_bundle_path": "/tmp/archive/bundle",
+              "archived_original_scope": "project",
+              "archived_original_workspace": "/tmp/workspace-a"
+            }
+          ],
+          "top_skills": ["skill-arch-1"]
+        }
+        """
+
+        let data = try XCTUnwrap(payload.data(using: .utf8))
+        try data.write(to: SyncPaths.stateURL)
+        let state = store.loadState()
+
+        let archived = try XCTUnwrap(state.skills.first)
+        XCTAssertEqual(archived.status, .archived)
+        XCTAssertEqual(archived.archivedAt, "2026-02-20T12:00:00Z")
+        XCTAssertEqual(archived.archivedBundlePath, "/tmp/archive/bundle")
+        XCTAssertEqual(archived.archivedOriginalScope, "project")
+        XCTAssertEqual(archived.archivedOriginalWorkspace, "/tmp/workspace-a")
     }
 
     func testSyncAppSettingsBackwardCompatibleWithoutWorkspaceDiscoveryRoots() throws {
@@ -545,7 +600,12 @@ final class SkillsSyncSharedTests: XCTestCase {
             isSymlinkCanonical: false,
             packageType: "dir",
             skillKey: name.lowercased(),
-            symlinkTarget: "/tmp/\(id)"
+            symlinkTarget: "/tmp/\(id)",
+            status: .active,
+            archivedAt: nil,
+            archivedBundlePath: nil,
+            archivedOriginalScope: nil,
+            archivedOriginalWorkspace: nil
         )
     }
 

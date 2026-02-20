@@ -44,6 +44,17 @@ final class SyncPresentationTests: XCTestCase {
         XCTAssertEqual(filtered.map(\.id), ["p-1"])
     }
 
+    func testApplyFiltersHidesArchivedOutsideAllScope() {
+        let skills = [
+            makeSkill(id: "g-1", name: "Active Global", scope: "global", status: .active),
+            makeSkill(id: "a-1", name: "Archived Skill", scope: "global", status: .archived)
+        ]
+
+        XCTAssertEqual(AppViewModel.applyFilters(to: skills, query: "", scopeFilter: .all).map(\.id), ["g-1", "a-1"])
+        XCTAssertEqual(AppViewModel.applyFilters(to: skills, query: "", scopeFilter: .global).map(\.id), ["g-1"])
+        XCTAssertTrue(AppViewModel.applyFilters(to: skills, query: "", scopeFilter: .project).isEmpty)
+    }
+
     func testSyncFailureBannerIncludesRecoveryAndOptionalDetails() {
         let noDetails = InlineBannerPresentation.syncFailure(errorDetails: nil)
         XCTAssertEqual(noDetails.title, "Sync couldn't complete.")
@@ -210,7 +221,12 @@ final class SyncPresentationTests: XCTestCase {
             isSymlinkCanonical: true,
             packageType: "dir",
             skillKey: projectSkill.skillKey,
-            symlinkTarget: "/tmp/g-1"
+            symlinkTarget: "/tmp/g-1",
+            status: .active,
+            archivedAt: nil,
+            archivedBundlePath: nil,
+            archivedOriginalScope: nil,
+            archivedOriginalWorkspace: nil
         )
         let engine = MockSyncEngine(
             onDelete: { _ in .empty },
@@ -268,7 +284,12 @@ final class SyncPresentationTests: XCTestCase {
             isSymlinkCanonical: false,
             packageType: "dir",
             skillKey: "new-skill-name",
-            symlinkTarget: "/tmp/new-skill-name"
+            symlinkTarget: "/tmp/new-skill-name",
+            status: .active,
+            archivedAt: nil,
+            archivedBundlePath: nil,
+            archivedOriginalScope: nil,
+            archivedOriginalWorkspace: nil
         )
         let engine = MockSyncEngine(
             onDelete: { _ in .empty },
@@ -329,7 +350,12 @@ final class SyncPresentationTests: XCTestCase {
             isSymlinkCanonical: false,
             packageType: "dir",
             skillKey: "new-skill-name",
-            symlinkTarget: "/tmp/new-skill-name"
+            symlinkTarget: "/tmp/new-skill-name",
+            status: .active,
+            archivedAt: nil,
+            archivedBundlePath: nil,
+            archivedOriginalScope: nil,
+            archivedOriginalWorkspace: nil
         )
         let engine = MockSyncEngine(
             onDelete: { _ in .empty },
@@ -446,6 +472,22 @@ final class SyncPresentationTests: XCTestCase {
         XCTAssertEqual(Set(loaded.uiState?.selectedSkillIDs ?? []), Set(["g-1"]))
     }
 
+    @MainActor
+    func testStopPersistsPendingUIStateImmediately() throws {
+        try prepareSettingsDirectory()
+        let viewModel = AppViewModel()
+
+        viewModel.scopeFilter = .project
+        viewModel.searchText = "last-tab"
+        viewModel.selectedSkillIDs = Set(["g-1"])
+        viewModel.stop()
+
+        let loaded = SyncPreferencesStore().loadSettings()
+        XCTAssertEqual(loaded.uiState?.scopeFilter, ScopeFilter.project.rawValue)
+        XCTAssertEqual(loaded.uiState?.searchText, "last-tab")
+        XCTAssertEqual(Set(loaded.uiState?.selectedSkillIDs ?? []), Set(["g-1"]))
+    }
+
     func testSidebarGroupsAllScopeContainsGlobalAndProjectSections() {
         let skills = [
             makeSkill(id: "g-1", name: "Global One", scope: "global"),
@@ -481,7 +523,12 @@ final class SyncPresentationTests: XCTestCase {
                 isSymlinkCanonical: true,
                 packageType: "dir",
                 skillKey: "project-one",
-                symlinkTarget: "/tmp/p-1"
+                symlinkTarget: "/tmp/p-1",
+                status: .active,
+                archivedAt: nil,
+                archivedBundlePath: nil,
+                archivedOriginalScope: nil,
+                archivedOriginalWorkspace: nil
             )
         ]
 
@@ -542,6 +589,20 @@ final class SyncPresentationTests: XCTestCase {
         let groups = AppViewModel.sidebarGroups(from: skills)
 
         XCTAssertEqual(groups.map(\.title), ["Global Skills (1)"])
+    }
+
+    func testSidebarGroupsPlaceArchivedSectionAtBottom() {
+        let skills = [
+            makeSkill(id: "g-1", name: "Global", scope: "global", status: .active),
+            makeSkill(id: "p-1", name: "Project", scope: "project", workspace: "/tmp/workspace-a", status: .active),
+            makeSkill(id: "a-1", name: "Archived", scope: "global", status: .archived)
+        ]
+
+        let groups = AppViewModel.sidebarGroups(from: skills)
+
+        XCTAssertEqual(groups.last?.id, "archived")
+        XCTAssertEqual(groups.last?.title, "Archived Skills (1)")
+        XCTAssertEqual(groups.last?.skills.map(\.id), ["a-1"])
     }
 
     @MainActor
@@ -744,7 +805,8 @@ final class SyncPresentationTests: XCTestCase {
         name: String,
         scope: String,
         workspace: String? = nil,
-        sourcePath: String? = nil
+        sourcePath: String? = nil,
+        status: SkillLifecycleStatus = .active
     ) -> SkillRecord {
         SkillRecord(
             id: id,
@@ -757,7 +819,12 @@ final class SyncPresentationTests: XCTestCase {
             isSymlinkCanonical: true,
             packageType: "dir",
             skillKey: name.lowercased(),
-            symlinkTarget: "/tmp/\(id)"
+            symlinkTarget: "/tmp/\(id)",
+            status: status,
+            archivedAt: status == .archived ? "2026-02-20T12:00:00Z" : nil,
+            archivedBundlePath: status == .archived ? "/tmp/archive/\(id)" : nil,
+            archivedOriginalScope: status == .archived ? "global" : nil,
+            archivedOriginalWorkspace: nil
         )
     }
 
@@ -792,6 +859,8 @@ private struct MockDeleteError: LocalizedError {
 private final class MockSyncEngine: SyncEngineControlling {
     private let onRunSync: (SyncTrigger) async throws -> SyncState
     private let onDelete: (SkillRecord) async throws -> SyncState
+    private let onArchive: (SkillRecord) async throws -> SyncState
+    private let onRestore: (SkillRecord) async throws -> SyncState
     private let onMakeGlobal: (SkillRecord) async throws -> SyncState
     private let onRename: (SkillRecord, String) async throws -> SyncState
     private(set) var runSyncTriggers: [SyncTrigger] = []
@@ -799,11 +868,15 @@ private final class MockSyncEngine: SyncEngineControlling {
     init(
         onRunSync: @escaping (SyncTrigger) async throws -> SyncState = { _ in .empty },
         onDelete: @escaping (SkillRecord) async throws -> SyncState,
+        onArchive: @escaping (SkillRecord) async throws -> SyncState = { _ in .empty },
+        onRestore: @escaping (SkillRecord) async throws -> SyncState = { _ in .empty },
         onMakeGlobal: @escaping (SkillRecord) async throws -> SyncState = { _ in .empty },
         onRename: @escaping (SkillRecord, String) async throws -> SyncState = { _, _ in .empty }
     ) {
         self.onRunSync = onRunSync
         self.onDelete = onDelete
+        self.onArchive = onArchive
+        self.onRestore = onRestore
         self.onMakeGlobal = onMakeGlobal
         self.onRename = onRename
     }
@@ -819,6 +892,14 @@ private final class MockSyncEngine: SyncEngineControlling {
 
     func deleteCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
         try await onDelete(skill)
+    }
+
+    func archiveCanonicalSource(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
+        try await onArchive(skill)
+    }
+
+    func restoreArchivedSkillToGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
+        try await onRestore(skill)
     }
 
     func makeGlobal(skill: SkillRecord, confirmed: Bool) async throws -> SyncState {
