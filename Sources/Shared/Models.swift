@@ -99,3 +99,51 @@ struct SkillRecord: Codable, Identifiable, Hashable {
         case symlinkTarget = "symlink_target"
     }
 }
+
+struct SkillParsedMetadataItem: Hashable {
+    let key: String
+    let value: String
+}
+
+struct SkillParsedHeader: Hashable {
+    let title: String
+    let description: String?
+    let intro: String?
+    let metadata: [SkillParsedMetadataItem]
+}
+
+struct SkillRelation: Identifiable, Hashable {
+    enum Kind: String, Hashable {
+        case content
+        case symlink
+    }
+
+    let from: String
+    let to: String
+    let kind: Kind
+
+    var id: String {
+        "\(kind.rawValue)|\(from)|\(to)"
+    }
+}
+
+struct SkillTreeNode: Identifiable, Hashable {
+    let name: String
+    let relativePath: String
+    let isDirectory: Bool
+    let children: [SkillTreeNode]
+
+    var id: String {
+        "\(relativePath)|\(name)|\(isDirectory)"
+    }
+}
+
+struct SkillPreviewData: Hashable {
+    let displayTitle: String
+    let header: SkillParsedHeader?
+    let tree: SkillTreeNode?
+    let relations: [SkillRelation]
+    let mainFileBodyPreview: String?
+    let isMainFileBodyPreviewTruncated: Bool
+    let previewUnavailableReason: String?
+}

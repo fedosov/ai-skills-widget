@@ -21,6 +21,7 @@
 		A9F2CE96FF593515AD443E77 /* SyncPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8304E9A65C2431ABE9966B64 /* SyncPresentationTests.swift */; };
 		B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */; };
 		C2BBC39037C663095C8A879B /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */; };
+		E13E1F77A8270C7906CA984D /* SkillPreviewParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BA106E88878C7D61269E19 /* SkillPreviewParser.swift */; };
 		EFB6C6740C9434EC31932E4B /* SyncPreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */; };
 		F9907DCB3E41D9B58A07A909 /* AppTypographyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8173E401C252C1A9580FC8DA /* AppTypographyTests.swift */; };
 /* End PBXBuildFile section */
@@ -37,6 +38,7 @@
 
 /* Begin PBXFileReference section */
 		02B72351E85AD5A64F858F7C /* SyncStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStateStore.swift; sourceTree = "<group>"; };
+		03BA106E88878C7D61269E19 /* SkillPreviewParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillPreviewParser.swift; sourceTree = "<group>"; };
 		138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsSyncApp.swift; sourceTree = "<group>"; };
 		1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPaths.swift; sourceTree = "<group>"; };
 		1F9966D6B82CAA235FF1999E /* SyncEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngineTests.swift; sourceTree = "<group>"; };
@@ -63,6 +65,7 @@
 				71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */,
 				4FFEFD525ED4642D44514C61 /* Intents.swift */,
 				75916AF05215B08D62932045 /* Models.swift */,
+				03BA106E88878C7D61269E19 /* SkillPreviewParser.swift */,
 				647720FDC4534B8E25CBEF36 /* SyncEngine.swift */,
 				1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */,
 				84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */,
@@ -228,6 +231,7 @@
 				C2BBC39037C663095C8A879B /* DeepLink.swift in Sources */,
 				5D78B2135CD93FC3A887F6B6 /* Intents.swift in Sources */,
 				543D4F2D0FDFB533D3AF5CA3 /* Models.swift in Sources */,
+				E13E1F77A8270C7906CA984D /* SkillPreviewParser.swift in Sources */,
 				B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */,
 				424484FD68A9017C4A5CA60F /* SyncEngine.swift in Sources */,
 				5CACADC50C8F8FEC86FDC44F /* SyncPaths.swift in Sources */,

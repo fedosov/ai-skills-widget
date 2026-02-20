@@ -372,6 +372,45 @@ final class SyncPresentationTests: XCTestCase {
         XCTAssertEqual(groups.map(\.title), ["Global Skills (1)"])
     }
 
+    @MainActor
+    func testSidebarUsesParsedTitleWhenAvailable() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeFile(dir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Parsed Sidebar Title
+        ---
+
+        # Heading
+        """)
+
+        let skill = makeSkill(id: "g-1", name: "Fallback Name", scope: "global", sourcePath: dir.path)
+        let viewModel = AppViewModel()
+
+        XCTAssertEqual(viewModel.displayTitle(for: skill), "Parsed Sidebar Title")
+    }
+
+    @MainActor
+    func testDetailPreviewShowsBothContentAndSymlinkRelations() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeFile(dir.appendingPathComponent("resources/implementation-playbook.md"), contents: "hello")
+        try writeFile(dir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        name: detail-preview
+        ---
+
+        Use `resources/implementation-playbook.md`.
+        """)
+
+        let skill = makeSkill(id: "g-1", name: "Fallback Name", scope: "global", sourcePath: dir.path)
+        let viewModel = AppViewModel()
+        let preview = await viewModel.preview(for: skill)
+
+        XCTAssertTrue(preview.relations.contains(where: { $0.kind == .content }))
+        XCTAssertTrue(preview.relations.contains(where: { $0.kind == .symlink }))
+    }
+
     private func makeSkill(
         id: String,
         name: String,
@@ -410,6 +449,11 @@ final class SyncPresentationTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         settingsTempDir = dir
         setenv("SKILLS_SYNC_GROUP_DIR", dir.path, 1)
+    }
+
+    private func writeFile(_ path: URL, contents: String) throws {
+        try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try XCTUnwrap(contents.data(using: .utf8)).write(to: path)
     }
 }
 

@@ -25,7 +25,11 @@ extension SyncEngine: SyncEngineControlling { }
 
 @MainActor
 final class AppViewModel: ObservableObject {
-    @Published var state: SyncState = .empty
+    @Published var state: SyncState = .empty {
+        didSet {
+            prunePreviewCacheToCurrentState()
+        }
+    }
     @Published var searchText: String = ""
     @Published var scopeFilter: ScopeFilter = .all
     @Published var selectedSkillIDs: Set<String> = []
@@ -43,8 +47,10 @@ final class AppViewModel: ObservableObject {
     private let store: SyncStateStore
     private let preferencesStore: SyncPreferencesStore
     private let makeEngine: () -> any SyncEngineControlling
+    private let previewParser: SkillPreviewParser
     private var timer: Timer?
     private var isPreferencesLoaded = false
+    private var previewCache: [String: CachedSkillPreview] = [:]
 
     var selectedSkills: [SkillRecord] {
         state.skills.filter { selectedSkillIDs.contains($0.id) }
@@ -60,11 +66,13 @@ final class AppViewModel: ObservableObject {
     init(
         store: SyncStateStore = SyncStateStore(),
         preferencesStore: SyncPreferencesStore = SyncPreferencesStore(),
-        makeEngine: @escaping () -> any SyncEngineControlling = { SyncEngine() }
+        makeEngine: @escaping () -> any SyncEngineControlling = { SyncEngine() },
+        previewParser: SkillPreviewParser = SkillPreviewParser()
     ) {
         self.store = store
         self.preferencesStore = preferencesStore
         self.makeEngine = makeEngine
+        self.previewParser = previewParser
         autoMigrateToCanonicalSource = preferencesStore.loadSettings().autoMigrateToCanonicalSource
         isPreferencesLoaded = true
     }
@@ -196,6 +204,20 @@ final class AppViewModel: ObservableObject {
     func load() {
         state = store.loadState()
         pruneSelectionToCurrentSkills()
+    }
+
+    func displayTitle(for skill: SkillRecord) -> String {
+        previewData(for: skill).displayTitle
+    }
+
+    func preview(for skill: SkillRecord) async -> SkillPreviewData {
+        previewData(for: skill)
+    }
+
+    func warmupTitles(for skills: [SkillRecord]) async {
+        for skill in skills {
+            _ = previewData(for: skill)
+        }
     }
 
     func pruneSelectionToCurrentSkills() {
@@ -371,4 +393,30 @@ final class AppViewModel: ObservableObject {
         }
         return message
     }
+
+    private func previewData(for skill: SkillRecord) -> SkillPreviewData {
+        let signature = previewSignature(for: skill)
+        if let cached = previewCache[skill.id], cached.signature == signature {
+            return cached.preview
+        }
+
+        let preview = previewParser.parse(skill: skill)
+        previewCache[skill.id] = CachedSkillPreview(signature: signature, preview: preview)
+        return preview
+    }
+
+    private func prunePreviewCacheToCurrentState() {
+        let valid = Set(state.skills.map(\.id))
+        previewCache = previewCache.filter { valid.contains($0.key) }
+    }
+
+    private func previewSignature(for skill: SkillRecord) -> String {
+        let targets = skill.targetPaths.sorted().joined(separator: "|")
+        return "\(skill.id)|\(skill.name)|\(skill.packageType)|\(skill.canonicalSourcePath)|\(targets)"
+    }
+}
+
+private struct CachedSkillPreview {
+    let signature: String
+    let preview: SkillPreviewData
 }

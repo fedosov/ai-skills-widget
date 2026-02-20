@@ -115,13 +115,142 @@ final class SkillsSyncSharedTests: XCTestCase {
         XCTAssertFalse(fallback.contains("/.config/ai-agents/skillssync"))
     }
 
-    private func makeSkill(id: String, name: String, scope: String) -> SkillRecord {
+    func testSkillTitlePriorityTitleThenNameThenH1ThenRecordName() throws {
+        let parser = SkillPreviewParser()
+
+        let titleDir = tempDir.appendingPathComponent("skill-title", isDirectory: true)
+        try writeFile(titleDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Fancy Title
+        name: from-name
+        ---
+
+        # Heading Title
+        """)
+        let titlePreview = parser.parse(skill: makeSkill(id: "s1", name: "record-name", scope: "global", sourcePath: titleDir.path))
+        XCTAssertEqual(titlePreview.displayTitle, "Fancy Title")
+
+        let nameDir = tempDir.appendingPathComponent("skill-name", isDirectory: true)
+        try writeFile(nameDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        name: Name Only
+        ---
+
+        # Heading Title
+        """)
+        let namePreview = parser.parse(skill: makeSkill(id: "s2", name: "record-name", scope: "global", sourcePath: nameDir.path))
+        XCTAssertEqual(namePreview.displayTitle, "Name Only")
+
+        let h1Dir = tempDir.appendingPathComponent("skill-h1", isDirectory: true)
+        try writeFile(h1Dir.appendingPathComponent("SKILL.md"), contents: """
+        # Heading Only
+
+        body
+        """)
+        let h1Preview = parser.parse(skill: makeSkill(id: "s3", name: "record-name", scope: "global", sourcePath: h1Dir.path))
+        XCTAssertEqual(h1Preview.displayTitle, "Heading Only")
+
+        let fallbackDir = tempDir.appendingPathComponent("skill-fallback", isDirectory: true)
+        try writeFile(fallbackDir.appendingPathComponent("SKILL.md"), contents: "body without heading")
+        let fallbackPreview = parser.parse(skill: makeSkill(id: "s4", name: "record-name", scope: "global", sourcePath: fallbackDir.path))
+        XCTAssertEqual(fallbackPreview.displayTitle, "record-name")
+    }
+
+    func testParseFrontmatterHeaderExtractsKnownKeysAndIntro() throws {
+        let parser = SkillPreviewParser()
+        let skillDir = tempDir.appendingPathComponent("skill-header", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Header Title
+        name: fallback-name
+        description: One-line description.
+        source: https://example.com/skill
+        risk: safe
+        ---
+
+        # Main Header
+
+        First intro paragraph for preview.
+
+        ## Next Section
+        """)
+
+        let preview = parser.parse(skill: makeSkill(id: "s5", name: "record-name", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertEqual(preview.header?.title, "Header Title")
+        XCTAssertEqual(preview.header?.description, "One-line description.")
+        XCTAssertEqual(preview.header?.intro, "First intro paragraph for preview.")
+        XCTAssertEqual(preview.header?.metadata.first(where: { $0.key == "risk" })?.value, "safe")
+        XCTAssertEqual(preview.header?.metadata.first(where: { $0.key == "source" })?.value, "https://example.com/skill")
+    }
+
+    func testTreeBuildLimitsToThreeLevelsAndAddsMoreNode() throws {
+        let parser = SkillPreviewParser()
+        let skillDir = tempDir.appendingPathComponent("skill-tree", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: "# Root")
+        try writeFile(skillDir.appendingPathComponent("a/b/c/d/deep.txt"), contents: "deep")
+        try writeFile(skillDir.appendingPathComponent("a/b/c/peer.txt"), contents: "peer")
+
+        let preview = parser.parse(skill: makeSkill(id: "s6", name: "record-name", scope: "global", sourcePath: skillDir.path))
+        let thirdLevel = try XCTUnwrap(preview.tree?.children.first(where: { $0.name == "a" })?.children.first(where: { $0.name == "b" })?.children.first(where: { $0.name == "c" }))
+        XCTAssertTrue(thirdLevel.children.contains(where: { $0.name.contains("more") }))
+    }
+
+    func testExtractContentRelationsFindsBacktickPathsAndMarkdownLinksAndOpenPattern() throws {
+        let parser = SkillPreviewParser()
+        let skillDir = tempDir.appendingPathComponent("skill-rel", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("resources/implementation-playbook.md"), contents: "res")
+        try writeFile(skillDir.appendingPathComponent("references/guide.md"), contents: "ref")
+        try writeFile(skillDir.appendingPathComponent("scripts/run.sh"), contents: "echo run")
+        try writeFile(skillDir.appendingPathComponent("assets/logo.svg"), contents: "<svg/>")
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        name: rel-skill
+        ---
+
+        Use `resources/implementation-playbook.md`.
+        Read [guide](references/guide.md).
+        Then open scripts/run.sh.
+        Asset: `assets/logo.svg`.
+        Missing: `resources/missing.md`.
+        """)
+
+        let preview = parser.parse(skill: makeSkill(id: "s7", name: "record-name", scope: "global", sourcePath: skillDir.path))
+        let contentTargets = Set(preview.relations.filter { $0.kind == .content }.map(\.to))
+
+        XCTAssertTrue(contentTargets.contains("resources/implementation-playbook.md"))
+        XCTAssertTrue(contentTargets.contains("references/guide.md"))
+        XCTAssertTrue(contentTargets.contains("scripts/run.sh"))
+        XCTAssertTrue(contentTargets.contains("assets/logo.svg"))
+        XCTAssertFalse(contentTargets.contains("resources/missing.md"))
+    }
+
+    func testPreviewFallsBackWhenSkillFileMissing() {
+        let parser = SkillPreviewParser()
+        let skillDir = tempDir.appendingPathComponent("skill-missing", isDirectory: true)
+        try? FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        let skill = makeSkill(
+            id: "s8",
+            name: "record-name",
+            scope: "global",
+            sourcePath: skillDir.path
+        )
+
+        let preview = parser.parse(skill: skill)
+
+        XCTAssertEqual(preview.displayTitle, "record-name")
+        XCTAssertNil(preview.header)
+        XCTAssertNotNil(preview.previewUnavailableReason)
+        XCTAssertTrue(preview.relations.contains(where: { $0.kind == .symlink }))
+    }
+
+    private func makeSkill(id: String, name: String, scope: String, sourcePath: String? = nil) -> SkillRecord {
         SkillRecord(
             id: id,
             name: name,
             scope: scope,
             workspace: scope == "project" ? "/tmp/project" : nil,
-            canonicalSourcePath: "/tmp/\(id)",
+            canonicalSourcePath: sourcePath ?? "/tmp/\(id)",
             targetPaths: ["/tmp/target/\(id)"],
             exists: true,
             isSymlinkCanonical: false,
@@ -129,5 +258,10 @@ final class SkillsSyncSharedTests: XCTestCase {
             skillKey: name.lowercased(),
             symlinkTarget: "/tmp/\(id)"
         )
+    }
+
+    private func writeFile(_ path: URL, contents: String) throws {
+        try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try XCTUnwrap(contents.data(using: .utf8)).write(to: path)
     }
 }

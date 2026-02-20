@@ -53,7 +53,9 @@ private struct ContentView: View {
                 skills: viewModel.filteredSkills,
                 searchText: $viewModel.searchText,
                 scopeFilter: $viewModel.scopeFilter,
-                selectedSkillIDs: $viewModel.selectedSkillIDs
+                selectedSkillIDs: $viewModel.selectedSkillIDs,
+                displayTitle: viewModel.displayTitle,
+                warmupTitles: viewModel.warmupTitles
             )
             .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
         } detail: {
@@ -64,7 +66,8 @@ private struct ContentView: View {
                 onReveal: viewModel.reveal,
                 onDelete: viewModel.delete,
                 onMakeGlobal: viewModel.makeGlobal,
-                onDeleteSelected: viewModel.deleteSelectedSkills
+                onDeleteSelected: viewModel.deleteSelectedSkills,
+                previewProvider: viewModel.preview
             )
         }
         .toolbar {
@@ -93,6 +96,8 @@ private struct SidebarView: View {
     @Binding var searchText: String
     @Binding var scopeFilter: ScopeFilter
     @Binding var selectedSkillIDs: Set<String>
+    let displayTitle: (SkillRecord) -> String
+    let warmupTitles: ([SkillRecord]) async -> Void
 
     private var groups: [SidebarSkillGroup] {
         AppViewModel.sidebarGroups(from: skills)
@@ -120,7 +125,10 @@ private struct SidebarView: View {
                     ForEach(groups, id: \.id) { group in
                         Section(group.title) {
                             ForEach(group.skills, id: \.id) { skill in
-                                SkillRowView(skill: skill)
+                                SkillRowView(
+                                    skill: skill,
+                                    title: displayTitle(skill)
+                                )
                                     .tag(skill.id)
                             }
                         }
@@ -128,6 +136,9 @@ private struct SidebarView: View {
                 }
                 .listStyle(.sidebar)
                 .searchable(text: $searchText, placement: .sidebar, prompt: "Search skills and paths")
+                .task(id: skills.map(\.id).joined(separator: "|")) {
+                    await warmupTitles(skills)
+                }
             }
         }
     }
@@ -135,11 +146,17 @@ private struct SidebarView: View {
 
 private struct SkillRowView: View {
     let skill: SkillRecord
+    let title: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text(skill.name)
+            Text(title)
                 .font(.app(.body).weight(.semibold))
+                .lineLimit(1)
+
+            Text(skill.name)
+                .font(.app(.meta))
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
 
             Text(skill.canonicalSourcePath)
@@ -168,6 +185,7 @@ private struct DetailPaneView: View {
     let onDelete: (SkillRecord) -> Void
     let onMakeGlobal: (SkillRecord) -> Void
     let onDeleteSelected: () -> Void
+    let previewProvider: (SkillRecord) async -> SkillPreviewData
 
     var body: some View {
         if let singleSelectedSkill {
@@ -176,7 +194,8 @@ private struct DetailPaneView: View {
                 onOpen: onOpen,
                 onReveal: onReveal,
                 onDelete: onDelete,
-                onMakeGlobal: onMakeGlobal
+                onMakeGlobal: onMakeGlobal,
+                previewProvider: previewProvider
             )
         } else if selectedSkills.count > 1 {
             MultiSelectionDetailView(
@@ -276,13 +295,15 @@ private struct SkillDetailView: View {
     let onReveal: (SkillRecord) -> Void
     let onDelete: (SkillRecord) -> Void
     let onMakeGlobal: (SkillRecord) -> Void
+    let previewProvider: (SkillRecord) async -> SkillPreviewData
     @State private var showDeleteConfirmation = false
     @State private var showMakeGlobalConfirmation = false
     @State private var showMakeGlobalSecondConfirmation = false
+    @State private var previewData: SkillPreviewData?
 
     var body: some View {
         Form {
-            Section("Overview") {
+            Section("Overview & Preview") {
                 LabeledContent("Name", value: skill.name)
                 LabeledContent("Source status", value: skill.exists ? "Available" : "Missing")
                 LabeledContent("Package type", value: skill.packageType)
@@ -295,6 +316,16 @@ private struct SkillDetailView: View {
                             .multilineTextAlignment(.leading)
                             .lineLimit(nil)
                     }
+                }
+                Divider()
+                Text("Skill Preview")
+                    .font(.app(.sectionHeader))
+                if let previewData {
+                    SkillPreviewSection(previewData: previewData)
+                } else {
+                    Text("Loading preview...")
+                        .font(.app(.secondary))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -375,6 +406,9 @@ private struct SkillDetailView: View {
             Text("The canonical source will be moved to Trash.")
         }
         .formStyle(.grouped)
+        .task(id: "\(skill.id)|\(skill.canonicalSourcePath)") {
+            previewData = await previewProvider(skill)
+        }
     }
 }
 
@@ -430,6 +464,143 @@ private struct SyncHealthPopoverContent: View {
                 Button("Sync Now") {
                     onSyncNow()
                 }
+            }
+        }
+    }
+}
+
+private struct SkillPreviewSection: View {
+    let previewData: SkillPreviewData
+
+    private var contentRelations: [SkillRelation] {
+        previewData.relations.filter { $0.kind == .content }
+    }
+
+    private var symlinkRelations: [SkillRelation] {
+        previewData.relations.filter { $0.kind == .symlink }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            if let header = previewData.header {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text(header.title)
+                        .font(.app(.sectionHeader))
+                    if let description = header.description {
+                        Text(description)
+                            .font(.app(.secondary))
+                            .foregroundStyle(.secondary)
+                    }
+                    if !header.metadata.isEmpty {
+                        ScrollView(.horizontal) {
+                            HStack(spacing: AppSpacing.sm) {
+                                ForEach(header.metadata, id: \.self) { item in
+                                    Text("\(item.key): \(item.value)")
+                                        .font(.app(.meta))
+                                        .padding(.horizontal, AppSpacing.sm)
+                                        .padding(.vertical, 2)
+                                        .background(.quaternary.opacity(0.5))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                        .scrollIndicators(.never)
+                    }
+                    if let intro = header.intro {
+                        Text(intro)
+                            .font(.app(.secondary))
+                    }
+                }
+            } else if let reason = previewData.previewUnavailableReason {
+                Text(reason)
+                    .font(.app(.secondary))
+                    .foregroundStyle(.secondary)
+            }
+
+            if let root = previewData.tree {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text("Files")
+                        .font(.app(.secondary).weight(.semibold))
+                    ForEach(root.children, id: \.id) { node in
+                        SkillTreeNodeView(node: node, depth: 0)
+                    }
+                }
+            }
+
+            if !contentRelations.isEmpty || !symlinkRelations.isEmpty {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text("Relations")
+                        .font(.app(.secondary).weight(.semibold))
+                    ForEach(contentRelations, id: \.id) { relation in
+                        RelationRow(relation: relation)
+                    }
+                    ForEach(symlinkRelations, id: \.id) { relation in
+                        RelationRow(relation: relation)
+                    }
+                }
+            }
+
+            if let bodyPreview = previewData.mainFileBodyPreview {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text("SKILL.md Preview")
+                        .font(.app(.secondary).weight(.semibold))
+                    Text(bodyPreview)
+                        .font(.app(.pathMono))
+                        .textSelection(.enabled)
+                        .lineLimit(nil)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(AppSpacing.sm)
+                        .background(.quaternary.opacity(0.35))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    if previewData.isMainFileBodyPreviewTruncated {
+                        Text("Preview truncated")
+                            .font(.app(.meta))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SkillTreeNodeView: View {
+    let node: SkillTreeNode
+    let depth: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: node.isDirectory ? "folder" : "doc.text")
+                    .foregroundStyle(.secondary)
+                Text(node.name)
+                    .font(node.isDirectory ? .app(.secondary) : .app(.pathMono))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .padding(.leading, CGFloat(depth) * 14)
+
+            ForEach(node.children, id: \.id) { child in
+                SkillTreeNodeView(node: child, depth: depth + 1)
+            }
+        }
+    }
+}
+
+private struct RelationRow: View {
+    let relation: SkillRelation
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: relation.kind == .content ? "doc.text" : "link")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(relation.from)
+                    .font(.app(.meta))
+                    .foregroundStyle(.secondary)
+                Text("-> \(relation.to)")
+                    .font(.app(.pathMono))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
     }
