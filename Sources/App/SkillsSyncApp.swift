@@ -71,6 +71,7 @@ private struct ContentView: View {
                 SyncHealthToolbarControl(
                     state: viewModel.state,
                     feedbackMessages: feedbackMessages,
+                    autoMigrateToCanonicalSource: $viewModel.autoMigrateToCanonicalSource,
                     onSyncNow: viewModel.syncNow
                 )
 
@@ -187,6 +188,7 @@ private struct DetailPaneView: View {
 private struct SyncHealthToolbarControl: View {
     let state: SyncState
     let feedbackMessages: [InlineBannerPresentation]
+    @Binding var autoMigrateToCanonicalSource: Bool
     let onSyncNow: () -> Void
     @State private var showDetails = false
 
@@ -208,6 +210,7 @@ private struct SyncHealthToolbarControl: View {
             SyncHealthPopoverContent(
                 state: state,
                 feedbackMessages: feedbackMessages,
+                autoMigrateToCanonicalSource: $autoMigrateToCanonicalSource,
                 onSyncNow: onSyncNow
             )
             .frame(minWidth: 320, idealWidth: 360)
@@ -336,6 +339,7 @@ private struct SkillDetailView: View {
 private struct SyncHealthPopoverContent: View {
     let state: SyncState
     let feedbackMessages: [InlineBannerPresentation]
+    @Binding var autoMigrateToCanonicalSource: Bool
     let onSyncNow: () -> Void
 
     private var status: SyncStatusPresentation {
@@ -376,8 +380,14 @@ private struct SyncHealthPopoverContent: View {
 
             Divider()
 
-            Button("Sync Now") {
-                onSyncNow()
+            HStack(spacing: AppSpacing.md) {
+                Toggle("Auto-migrate source", isOn: $autoMigrateToCanonicalSource)
+                    .toggleStyle(.checkbox)
+                    .font(.app(.secondary))
+                Spacer()
+                Button("Sync Now") {
+                    onSyncNow()
+                }
             }
         }
     }

@@ -19,4 +19,8 @@ enum SyncPaths {
     static var stateURL: URL {
         runtimeDirectoryURL.appendingPathComponent("state.json")
     }
+
+    static var appSettingsURL: URL {
+        runtimeDirectoryURL.appendingPathComponent("app-settings.json")
+    }
 }

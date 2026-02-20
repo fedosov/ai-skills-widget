@@ -13,6 +13,7 @@ enum SyncEngineError: LocalizedError {
     case deletionBlockedProtectedPath
     case deletionOutsideAllowedRoots
     case deletionTargetMissing
+    case migrationFailed(skillKey: String, reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -26,6 +27,8 @@ enum SyncEngineError: LocalizedError {
             return "Deletion blocked: target outside allowed roots"
         case .deletionTargetMissing:
             return "Deletion target does not exist"
+        case let .migrationFailed(skillKey, reason):
+            return "Migration failed for \(skillKey): \(reason)"
         }
     }
 }
@@ -100,19 +103,27 @@ private struct SyncCoreResult {
     let conflictCount: Int
 }
 
+private enum MigrationRollbackOperation {
+    case move(from: URL, to: URL)
+    case restoreSymlink(path: URL, backup: URL)
+}
+
 struct SyncEngine {
     private let environment: SyncEngineEnvironment
     private let store: SyncStateStore
+    private let preferencesStore: SyncPreferencesStore
     private let fileManager: FileManager
     private let protectedSegments: Set<String> = [".system"]
 
     init(
         environment: SyncEngineEnvironment = .current,
         store: SyncStateStore = SyncStateStore(),
+        preferencesStore: SyncPreferencesStore = SyncPreferencesStore(),
         fileManager: FileManager = .default
     ) {
         self.environment = environment
         self.store = store
+        self.preferencesStore = preferencesStore
         self.fileManager = fileManager
     }
 
@@ -199,6 +210,7 @@ struct SyncEngine {
 
     private func runCoreSync() throws -> SyncCoreResult {
         try ensureDirectories()
+        let autoMigrateToCanonical = preferencesStore.loadSettings().autoMigrateToCanonicalSource
 
         var conflicts: [SyncConflict] = []
         var entries: [SkillRecord] = []
@@ -206,11 +218,14 @@ struct SyncEngine {
         let globalCandidates = discoverGlobalPackages()
         let globalResolution = resolveScopeCandidates(globalCandidates, scope: "global", workspace: nil)
         conflicts.append(contentsOf: globalResolution.conflicts)
+        var globalCanonical = globalResolution.canonical
 
         let workspaces = workspaceCandidates()
+        var projectCandidatesByWorkspace: [URL: [SkillPackage]] = [:]
         var projectResolvedByWorkspace: [URL: [String: SkillPackage]] = [:]
         for workspace in workspaces {
             let candidates = discoverProjectPackages(workspace: workspace)
+            projectCandidatesByWorkspace[workspace] = candidates
             let resolution = resolveScopeCandidates(candidates, scope: "project", workspace: workspace)
             conflicts.append(contentsOf: resolution.conflicts)
             projectResolvedByWorkspace[workspace] = resolution.canonical
@@ -220,11 +235,40 @@ struct SyncEngine {
             throw SyncEngineError.conflicts(conflicts)
         }
 
+        if autoMigrateToCanonical {
+            let backupRoot = environment.runtimeDirectory
+                .appendingPathComponent("migration-backups", isDirectory: true)
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try fileManager.createDirectory(at: backupRoot, withIntermediateDirectories: true)
+            do {
+                globalCanonical = try migrateScopeCandidatesToClaude(
+                    candidates: globalCandidates,
+                    scope: "global",
+                    workspace: nil,
+                    backupRoot: backupRoot
+                )
+
+                for workspace in workspaces {
+                    let candidates = projectCandidatesByWorkspace[workspace] ?? []
+                    let migrated = try migrateScopeCandidatesToClaude(
+                        candidates: candidates,
+                        scope: "project",
+                        workspace: workspace,
+                        backupRoot: backupRoot
+                    )
+                    projectResolvedByWorkspace[workspace] = migrated
+                }
+                try? fileManager.removeItem(at: backupRoot)
+            } catch {
+                throw error
+            }
+        }
+
         let oldManagedLinks = loadManagedLinksManifest()
         var newManagedLinks: Set<String> = []
 
         let globalTargetRoots = globalTargets()
-        for (skillKey, package) in globalResolution.canonical.sorted(by: { $0.key < $1.key }) {
+        for (skillKey, package) in globalCanonical.sorted(by: { $0.key < $1.key }) {
             var targetPaths: [String] = []
             for targetRoot in globalTargetRoots {
                 let target = targetRoot.appendingPathComponent(skillKey, isDirectory: package.packageType == "dir")
@@ -383,8 +427,13 @@ struct SyncEngine {
         for case let url as URL in enumerator {
             guard url.lastPathComponent == "SKILL.md" else { continue }
 
-            let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
-            let keyPath = URL(fileURLWithPath: relative).deletingLastPathComponent().path
+            let rootPath = standardizedPath(root)
+            let urlPath = standardizedPath(url)
+            guard urlPath.hasPrefix(rootPath + "/") else {
+                continue
+            }
+            let relative = String(urlPath.dropFirst(rootPath.count + 1))
+            let keyPath = (relative as NSString).deletingLastPathComponent
             let skillKey = keyPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             if skillKey.isEmpty || isProtectedSkillKey(skillKey) || seen.contains(skillKey) {
                 continue
@@ -463,6 +512,85 @@ struct SyncEngine {
         return 999
     }
 
+    private func migrateScopeCandidatesToClaude(
+        candidates: [SkillPackage],
+        scope: String,
+        workspace: URL?,
+        backupRoot: URL
+    ) throws -> [String: SkillPackage] {
+        var byKey: [String: [SkillPackage]] = [:]
+        for candidate in candidates {
+            byKey[candidate.skillKey, default: []].append(candidate)
+        }
+
+        var canonicalByKey: [String: SkillPackage] = [:]
+        let canonicalRoot = scope == "global"
+            ? claudeSkillsRoot()
+            : workspace!.appendingPathComponent(".claude/skills", isDirectory: true)
+
+        for (skillKey, options) in byKey.sorted(by: { $0.key < $1.key }) {
+            let hashes = Set(options.map(\.packageHash))
+            if hashes.count > 1 {
+                throw SyncEngineError.conflicts([SyncConflict(scope: scope, workspace: workspace?.path, skillKey: skillKey)])
+            }
+
+            let desiredCanonicalPath = canonicalRoot.appendingPathComponent(skillKey, isDirectory: true)
+            let currentCanonical = options.first {
+                standardizedPath($0.canonicalPath) == standardizedPath(desiredCanonicalPath)
+            }
+
+            let skillBackupRoot = backupRoot.appendingPathComponent(skillKey, isDirectory: true)
+            try fileManager.createDirectory(at: skillBackupRoot, withIntermediateDirectories: true)
+            var rollbackOps: [MigrationRollbackOperation] = []
+
+            do {
+                let effectiveCanonical: SkillPackage
+                if let currentCanonical {
+                    effectiveCanonical = currentCanonical
+                } else {
+                    guard let source = options.min(by: { lhs, rhs in
+                        sourcePriority(scope: scope, package: lhs, workspace: workspace) < sourcePriority(scope: scope, package: rhs, workspace: workspace)
+                    }) else {
+                        continue
+                    }
+                    try moveSourceToCanonical(source: source.canonicalPath, canonical: desiredCanonicalPath)
+                    rollbackOps.append(.move(from: source.canonicalPath, to: desiredCanonicalPath))
+                    effectiveCanonical = SkillPackage(
+                        scope: source.scope,
+                        workspace: source.workspace,
+                        sourceRoot: canonicalRoot,
+                        skillKey: source.skillKey,
+                        name: desiredCanonicalPath.lastPathComponent,
+                        canonicalPath: desiredCanonicalPath,
+                        packageType: source.packageType,
+                        packageHash: source.packageHash
+                    )
+                }
+
+                for option in options {
+                    if standardizedPath(option.canonicalPath) == standardizedPath(desiredCanonicalPath) {
+                        continue
+                    }
+                    if let backupPath = try replacePathWithSymlink(
+                        path: option.canonicalPath,
+                        destination: desiredCanonicalPath,
+                        backupRoot: skillBackupRoot
+                    ) {
+                        rollbackOps.append(.restoreSymlink(path: option.canonicalPath, backup: backupPath))
+                    }
+                }
+
+                canonicalByKey[skillKey] = effectiveCanonical
+                try? fileManager.removeItem(at: skillBackupRoot)
+            } catch {
+                rollbackMigrationOperations(operations: rollbackOps)
+                throw SyncEngineError.migrationFailed(skillKey: skillKey, reason: error.localizedDescription)
+            }
+        }
+
+        return canonicalByKey
+    }
+
     private func workspaceCandidates() -> [URL] {
         var candidates: [URL] = []
 
@@ -506,6 +634,69 @@ struct SyncEngine {
         let parent = target.deletingLastPathComponent()
         try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
         try fileManager.createSymbolicLink(at: target, withDestinationURL: destination)
+    }
+
+    private func moveSourceToCanonical(source: URL, canonical: URL) throws {
+        guard standardizedPath(source) != standardizedPath(canonical) else {
+            return
+        }
+        if fileManager.fileExists(atPath: canonical.path) || canonical.isSymbolicLink {
+            throw NSError(
+                domain: "SkillsSync",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Canonical path is occupied at \(canonical.path)"]
+            )
+        }
+        try fileManager.createDirectory(at: canonical.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fileManager.moveItem(at: source, to: canonical)
+    }
+
+    private func replacePathWithSymlink(path: URL, destination: URL, backupRoot: URL) throws -> URL? {
+        guard standardizedPath(path) != standardizedPath(destination) else {
+            return nil
+        }
+
+        if path.isSymbolicLink,
+           let existingDestination = try? fileManager.destinationOfSymbolicLink(atPath: path.path),
+           standardizedPath(URL(fileURLWithPath: existingDestination)) == standardizedPath(destination) {
+            return nil
+        }
+
+        guard fileManager.fileExists(atPath: path.path) || path.isSymbolicLink else {
+            return nil
+        }
+
+        let backupPath = backupRoot.appendingPathComponent(sha1Hex(path.path), isDirectory: path.hasDirectoryPath)
+        if fileManager.fileExists(atPath: backupPath.path) || backupPath.isSymbolicLink {
+            try fileManager.removeItem(at: backupPath)
+        }
+
+        try fileManager.moveItem(at: path, to: backupPath)
+        do {
+            try fileManager.createSymbolicLink(at: path, withDestinationURL: destination)
+        } catch {
+            try? fileManager.moveItem(at: backupPath, to: path)
+            throw error
+        }
+        return backupPath
+    }
+
+    private func rollbackMigrationOperations(operations: [MigrationRollbackOperation]) {
+        for operation in operations.reversed() {
+            switch operation {
+            case let .move(from, to):
+                if fileManager.fileExists(atPath: to.path) || to.isSymbolicLink {
+                    try? fileManager.moveItem(at: to, to: from)
+                }
+            case let .restoreSymlink(path, backup):
+                if fileManager.fileExists(atPath: path.path) || path.isSymbolicLink {
+                    try? fileManager.removeItem(at: path)
+                }
+                if fileManager.fileExists(atPath: backup.path) || backup.isSymbolicLink {
+                    try? fileManager.moveItem(at: backup, to: path)
+                }
+            }
+        }
     }
 
     private func ensureDirectories() throws {

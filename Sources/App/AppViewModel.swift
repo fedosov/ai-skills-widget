@@ -17,10 +17,20 @@ final class AppViewModel: ObservableObject {
     @Published var selectedSkillIDs: Set<String> = []
     @Published var alertMessage: String?
     @Published var localBanner: InlineBannerPresentation?
+    @Published var autoMigrateToCanonicalSource: Bool = false {
+        didSet {
+            guard isPreferencesLoaded else { return }
+            preferencesStore.saveSettings(
+                SyncAppSettings(version: 1, autoMigrateToCanonicalSource: autoMigrateToCanonicalSource)
+            )
+        }
+    }
 
     private let store: SyncStateStore
+    private let preferencesStore: SyncPreferencesStore
     private let makeEngine: () -> any SyncEngineControlling
     private var timer: Timer?
+    private var isPreferencesLoaded = false
 
     var selectedSkills: [SkillRecord] {
         state.skills.filter { selectedSkillIDs.contains($0.id) }
@@ -35,10 +45,14 @@ final class AppViewModel: ObservableObject {
 
     init(
         store: SyncStateStore = SyncStateStore(),
+        preferencesStore: SyncPreferencesStore = SyncPreferencesStore(),
         makeEngine: @escaping () -> any SyncEngineControlling = { SyncEngine() }
     ) {
         self.store = store
+        self.preferencesStore = preferencesStore
         self.makeEngine = makeEngine
+        autoMigrateToCanonicalSource = preferencesStore.loadSettings().autoMigrateToCanonicalSource
+        isPreferencesLoaded = true
     }
 
     var filteredSkills: [SkillRecord] {

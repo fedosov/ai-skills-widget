@@ -90,6 +90,77 @@ final class SyncEngineTests: XCTestCase {
         )
     }
 
+    func testRunSyncWhenAutoMigrationOffKeepsCurrentCanonicalSelection() async throws {
+        try writeSkill(root: path(".claude/skills"), key: "shared", body: "same")
+        try writeSkill(root: path(".codex/skills"), key: "shared", body: "same")
+        try writeAutoMigrationPreference(enabled: false)
+        configureEngine()
+
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+
+        let canonical = try XCTUnwrap(state.skills.first(where: { $0.skillKey == "shared" }))
+        XCTAssertEqual(
+            URL(fileURLWithPath: canonical.canonicalSourcePath).standardizedFileURL.path,
+            path(".claude/skills/shared").standardizedFileURL.path
+        )
+    }
+
+    func testRunSyncWhenAutoMigrationOnMovesCodexOnlySkillToClaudeAndCreatesSymlinkBack() async throws {
+        try writeSkill(root: path(".codex/skills"), key: "alpha", body: "A")
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+
+        let canonical = try XCTUnwrap(state.skills.first(where: { $0.skillKey == "alpha" }))
+        let claudePath = path(".claude/skills/alpha")
+        let codexPath = path(".codex/skills/alpha")
+
+        XCTAssertEqual(
+            URL(fileURLWithPath: canonical.canonicalSourcePath).standardizedFileURL.path,
+            claudePath.standardizedFileURL.path
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: claudePath.path))
+        XCTAssertTrue(codexPath.isTestSymlink)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: codexPath.path), claudePath.path)
+    }
+
+    func testRunSyncWhenAutoMigrationOnConvertsAgentsSourceToSymlinkWhenClaudeExists() async throws {
+        try writeSkill(root: path(".claude/skills"), key: "beta", body: "B")
+        try writeSkill(root: path(".agents/skills"), key: "beta", body: "B")
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        let engine = SyncEngine()
+        _ = try await engine.runSync(trigger: .manual)
+
+        let agentsPath = path(".agents/skills/beta")
+        let claudePath = path(".claude/skills/beta")
+        XCTAssertTrue(agentsPath.isTestSymlink)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: agentsPath.path), claudePath.path)
+    }
+
+    func testRunSyncWhenAutoMigrationOnFailsWholeSyncOnMigrationError() async throws {
+        try writeSkill(root: path(".codex/skills"), key: "gamma", body: "G")
+        let blockingFile = path(".claude/skills/gamma")
+        try FileManager.default.createDirectory(at: blockingFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("blocked".utf8).write(to: blockingFile)
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        let engine = SyncEngine()
+
+        await XCTAssertThrowsErrorAsync {
+            _ = try await engine.runSync(trigger: .manual)
+        } assertion: { error in
+            XCTAssertTrue(error.localizedDescription.localizedCaseInsensitiveContains("migration"))
+        }
+
+        XCTAssertEqual(store.loadState().sync.status, .failed)
+    }
+
     func testDeleteCanonicalSourceRequiresConfirmedTrue() async throws {
         let skillPath = path(".claude/skills/delete-me")
         try FileManager.default.createDirectory(at: skillPath, withIntermediateDirectories: true)
@@ -176,6 +247,45 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(state.summary.globalCount, 1)
     }
 
+    func testSyncNowIntentHonorsPersistedAutoMigrationSetting() async throws {
+        try writeSkill(root: path(".codex/skills"), key: "intent-skill", body: "intent")
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        _ = try await SyncNowIntent().perform()
+        let state = store.loadState()
+
+        XCTAssertEqual(state.sync.status, .ok)
+        XCTAssertEqual(
+            URL(fileURLWithPath: state.skills.first?.canonicalSourcePath ?? "").standardizedFileURL.path,
+            path(".claude/skills/intent-skill").standardizedFileURL.path
+        )
+        XCTAssertTrue(path(".codex/skills/intent-skill").isTestSymlink)
+    }
+
+    func testDeleteCanonicalSourceResyncHonorsPersistedAutoMigrationSetting() async throws {
+        try writeSkill(root: path(".claude/skills"), key: "delete-resync", body: "same")
+        try writeSkill(root: path(".agents/skills"), key: "delete-resync", body: "same")
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        let engine = SyncEngine()
+        let initial = try await engine.runSync(trigger: .manual)
+        let skill = try XCTUnwrap(initial.skills.first(where: { $0.skillKey == "delete-resync" }))
+
+        try FileManager.default.removeItem(at: path(".agents/skills/delete-resync"))
+        try writeSkill(root: path(".agents/skills"), key: "delete-resync", body: "same")
+
+        let finalState = try await engine.deleteCanonicalSource(skill: skill, confirmed: true)
+        let canonical = try XCTUnwrap(finalState.skills.first(where: { $0.skillKey == "delete-resync" }))
+
+        XCTAssertEqual(
+            URL(fileURLWithPath: canonical.canonicalSourcePath).standardizedFileURL.path,
+            path(".claude/skills/delete-resync").standardizedFileURL.path
+        )
+        XCTAssertTrue(path(".agents/skills/delete-resync").isTestSymlink)
+    }
+
     private func configureEngine(shellRunner: SyncShellRunning = DefaultSyncShellRunner()) {
         SyncEngineEnvironment.testOverride = SyncEngineEnvironment(
             homeDirectory: homeDir,
@@ -200,6 +310,16 @@ final class SyncEngineTests: XCTestCase {
         let legacyRoot = path(".config/ai-agents/skills")
         try FileManager.default.createDirectory(at: legacyRoot, withIntermediateDirectories: true)
         try body.data(using: .utf8)?.write(to: legacyRoot.appendingPathComponent("\(name).md"))
+    }
+
+    private func writeAutoMigrationPreference(enabled: Bool) throws {
+        let payload: [String: Any] = [
+            "version": 1,
+            "auto_migrate_to_canonical_source": enabled
+        ]
+        let url = runtimeDir.appendingPathComponent("app-settings.json")
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        try data.write(to: url)
     }
 
     private func makeSkill(path: String) -> SkillRecord {
@@ -230,12 +350,21 @@ private final class CommandRecorder: SyncShellRunning {
 private extension XCTestCase {
     func XCTAssertThrowsErrorAsync(
         _ expression: @escaping () async throws -> Void,
+        assertion: ((Error) -> Void)? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
         do {
             try await expression()
             XCTFail("Expected error to be thrown", file: file, line: line)
-        } catch { }
+        } catch {
+            assertion?(error)
+        }
+    }
+}
+
+private extension URL {
+    var isTestSymlink: Bool {
+        (try? resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 }

@@ -21,6 +21,7 @@
 		A9F2CE96FF593515AD443E77 /* SyncPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8304E9A65C2431ABE9966B64 /* SyncPresentationTests.swift */; };
 		B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */; };
 		C2BBC39037C663095C8A879B /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */; };
+		EFB6C6740C9434EC31932E4B /* SyncPreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */; };
 		F9907DCB3E41D9B58A07A909 /* AppTypographyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8173E401C252C1A9580FC8DA /* AppTypographyTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -49,6 +50,7 @@
 		7F67DB7D2128AD14EE01B56D /* AppSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSpacing.swift; sourceTree = "<group>"; };
 		8173E401C252C1A9580FC8DA /* AppTypographyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypographyTests.swift; sourceTree = "<group>"; };
 		8304E9A65C2431ABE9966B64 /* SyncPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPresentationTests.swift; sourceTree = "<group>"; };
+		84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPreferencesStore.swift; sourceTree = "<group>"; };
 		C22F5067FCAFB7E48F14D295 /* SyncPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPresentation.swift; sourceTree = "<group>"; };
 		FD727AEEDFD6802944F1D016 /* SkillsSyncSharedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsSyncSharedTests.swift; sourceTree = "<group>"; };
 		FF5F0F7FB0C7F6161A8AD575 /* SkillsSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkillsSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -63,6 +65,7 @@
 				75916AF05215B08D62932045 /* Models.swift */,
 				647720FDC4534B8E25CBEF36 /* SyncEngine.swift */,
 				1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */,
+				84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */,
 				C22F5067FCAFB7E48F14D295 /* SyncPresentation.swift */,
 				02B72351E85AD5A64F858F7C /* SyncStateStore.swift */,
 			);
@@ -228,6 +231,7 @@
 				B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */,
 				424484FD68A9017C4A5CA60F /* SyncEngine.swift in Sources */,
 				5CACADC50C8F8FEC86FDC44F /* SyncPaths.swift in Sources */,
+				EFB6C6740C9434EC31932E4B /* SyncPreferencesStore.swift in Sources */,
 				47F6BFE6372E0B759952DBC4 /* SyncPresentation.swift in Sources */,
 				53CB1ADA2789A03334B44510 /* SyncStateStore.swift in Sources */,
 			);

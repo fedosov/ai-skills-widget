@@ -2,6 +2,16 @@ import XCTest
 @testable import SkillsSyncApp
 
 final class SyncPresentationTests: XCTestCase {
+    private var settingsTempDir: URL?
+
+    override func tearDownWithError() throws {
+        unsetenv("SKILLS_SYNC_GROUP_DIR")
+        if let settingsTempDir {
+            try? FileManager.default.removeItem(at: settingsTempDir)
+        }
+        settingsTempDir = nil
+    }
+
     func testSyncStatusPresentationUsesEmpatheticTitlesAndSymbols() {
         XCTAssertEqual(SyncHealthStatus.ok.presentation.title, "Healthy")
         XCTAssertEqual(SyncHealthStatus.ok.presentation.symbol, "checkmark.circle.fill")
@@ -186,6 +196,26 @@ final class SyncPresentationTests: XCTestCase {
         XCTAssertTrue(viewModel.alertMessage?.contains("Mock delete error") == true)
     }
 
+    @MainActor
+    func testAutoMigrationToggleDefaultsToOff() throws {
+        try prepareSettingsDirectory()
+
+        let viewModel = AppViewModel()
+
+        XCTAssertFalse(viewModel.autoMigrateToCanonicalSource)
+    }
+
+    @MainActor
+    func testAutoMigrationTogglePersistsBetweenViewModelInstances() throws {
+        try prepareSettingsDirectory()
+
+        let first = AppViewModel()
+        first.autoMigrateToCanonicalSource = true
+
+        let second = AppViewModel()
+        XCTAssertTrue(second.autoMigrateToCanonicalSource)
+    }
+
     private func makeSkill(id: String, name: String, scope: String) -> SkillRecord {
         SkillRecord(
             id: id,
@@ -211,6 +241,13 @@ final class SyncPresentationTests: XCTestCase {
             skills: skills,
             topSkills: []
         )
+    }
+
+    private func prepareSettingsDirectory() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        settingsTempDir = dir
+        setenv("SKILLS_SYNC_GROUP_DIR", dir.path, 1)
     }
 }
 
