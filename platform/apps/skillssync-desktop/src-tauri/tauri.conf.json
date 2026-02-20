@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "dev.fedosov.skillssync.desktop",
   "build": {
-    "beforeDevCommand": "npm --prefix ./ui run dev",
-    "beforeBuildCommand": "npm --prefix ./ui run build",
+    "beforeDevCommand": "node -e \"const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const dirs=['.','ui','../ui'];const dir=dirs.find((d)=>fs.existsSync(path.join(d,'package.json')));if(!dir){console.error('Could not locate UI package.json from cwd:',process.cwd());process.exit(1);}const npm=process.platform==='win32'?'npm.cmd':'npm';const r=cp.spawnSync(npm,['--prefix',dir,'run','dev'],{stdio:'inherit'});process.exit(r.status??1);\"",
+    "beforeBuildCommand": "node -e \"const fs=require('node:fs');const path=require('node:path');const cp=require('node:child_process');const dirs=['.','ui','../ui'];const dir=dirs.find((d)=>fs.existsSync(path.join(d,'package.json')));if(!dir){console.error('Could not locate UI package.json from cwd:',process.cwd());process.exit(1);}const npm=process.platform==='win32'?'npm.cmd':'npm';const r=cp.spawnSync(npm,['--prefix',dir,'run','build'],{stdio:'inherit'});process.exit(r.status??1);\"",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../ui/dist"
   },

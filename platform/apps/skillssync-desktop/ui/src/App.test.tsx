@@ -339,10 +339,10 @@ describe("App critical actions", () => {
       [projectSkill.skill_key]: buildDetails(projectSkill),
     });
 
-    let resolveSync: ((value: SyncState) => void) | null = null;
+    let resolveSync!: (value: SyncState) => void;
     vi.mocked(tauriApi.runSync).mockImplementation(
       () =>
-        new Promise((resolve) => {
+        new Promise<SyncState>((resolve) => {
           resolveSync = resolve;
         }),
     );
@@ -354,9 +354,6 @@ describe("App critical actions", () => {
     });
     expect(tauriApi.listSubagents).not.toHaveBeenCalled();
 
-    if (!resolveSync) {
-      throw new Error("runSync resolver was not initialized");
-    }
     resolveSync(state);
 
     await waitFor(() => {
