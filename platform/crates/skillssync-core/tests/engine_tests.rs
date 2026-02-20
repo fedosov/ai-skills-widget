@@ -126,7 +126,10 @@ fn run_sync_reports_conflict_when_hashes_differ() {
     let error = engine.run_sync(SyncTrigger::Manual).expect_err("must fail");
     assert!(error.to_string().contains("Detected 1 conflict"));
     let persisted = engine.load_state();
-    assert_eq!(persisted.sync.status, skillssync_core::SyncHealthStatus::Failed);
+    assert_eq!(
+        persisted.sync.status,
+        skillssync_core::SyncHealthStatus::Failed
+    );
     assert_eq!(persisted.summary.conflict_count, 1);
     assert_eq!(persisted.subagent_summary.conflict_count, 0);
 }

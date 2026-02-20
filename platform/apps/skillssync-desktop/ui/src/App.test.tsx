@@ -679,7 +679,9 @@ describe("App critical actions", () => {
     await screen.findByRole("heading", { name: projectSkill.name });
 
     await user.click(screen.getByRole("button", { name: "Subagents" }));
-    await user.click(screen.getByRole("button", { name: /Reviewer \(Project\)/ }));
+    await user.click(
+      screen.getByRole("button", { name: /Reviewer \(Project\)/ }),
+    );
 
     await waitFor(() => {
       expect(tauriApi.getSubagentDetails).toHaveBeenLastCalledWith(

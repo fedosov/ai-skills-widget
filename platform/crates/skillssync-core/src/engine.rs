@@ -293,12 +293,14 @@ impl SyncEngine {
             Err(error) => {
                 let (skill_conflict_count, subagent_conflict_count) = match &error {
                     SyncEngineError::Conflicts(_, conflicts) => {
-                        conflicts.iter().fold((0usize, 0usize), |(skills, subagents), item| {
-                            match item.kind {
-                                SyncConflictKind::Skill => (skills + 1, subagents),
-                                SyncConflictKind::Subagent => (skills, subagents + 1),
-                            }
-                        })
+                        conflicts
+                            .iter()
+                            .fold((0usize, 0usize), |(skills, subagents), item| {
+                                match item.kind {
+                                    SyncConflictKind::Skill => (skills + 1, subagents),
+                                    SyncConflictKind::Subagent => (skills, subagents + 1),
+                                }
+                            })
                     }
                     _ => (0, 0),
                 };

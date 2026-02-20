@@ -107,11 +107,7 @@ impl CodexSubagentRegistryWriter {
             configs.insert(global);
         }
 
-        self.collect_workspace_managed_configs(
-            &self.home_directory.join("Dev"),
-            2,
-            &mut configs,
-        );
+        self.collect_workspace_managed_configs(&self.home_directory.join("Dev"), 2, &mut configs);
         self.collect_workspace_managed_configs(
             &self.home_directory.join(".codex").join("worktrees"),
             3,
@@ -218,7 +214,9 @@ fn toml_escape(value: &str) -> String {
 }
 
 fn escape_multiline_toml(value: &str) -> String {
-    value.replace('\\', "\\\\").replace("\"\"\"", "\\\"\\\"\\\"")
+    value
+        .replace('\\', "\\\\")
+        .replace("\"\"\"", "\\\"\\\"\\\"")
 }
 
 fn has_subagent_managed_block(path: &Path, begin_marker: &str) -> bool {
@@ -245,12 +243,8 @@ mod tests {
             .join("nested")
             .join(".codex")
             .join("config.toml");
-        std::fs::create_dir_all(
-            deep_cfg
-                .parent()
-                .expect("parent dir for deep codex config"),
-        )
-        .expect("create deep config dir");
+        std::fs::create_dir_all(deep_cfg.parent().expect("parent dir for deep codex config"))
+            .expect("create deep config dir");
         let original = "\
 custom = true
 
@@ -330,10 +324,7 @@ config_file = \"agents/legacy.toml\"
             }])
             .expect("write registries");
 
-        let subagent_cfg = home
-            .join(".codex")
-            .join("agents")
-            .join("reviewer.toml");
+        let subagent_cfg = home.join(".codex").join("agents").join("reviewer.toml");
         let raw = std::fs::read_to_string(subagent_cfg).expect("read reviewer config");
         assert!(raw.contains("C:\\\\temp\\\\repo"));
         assert!(raw.contains("\\\\d+\\\\.md"));

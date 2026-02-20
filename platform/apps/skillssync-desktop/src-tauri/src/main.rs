@@ -633,8 +633,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_platform_context, build_subagent_target_status, normalize_os_name, read_skill_dir_tree,
-        SubagentTargetKind,
+        build_platform_context, build_subagent_target_status, normalize_os_name,
+        read_skill_dir_tree, SubagentTargetKind,
     };
     use std::fs;
     use std::path::Path;
@@ -696,11 +696,7 @@ mod tests {
 
     #[test]
     fn build_subagent_target_status_marks_missing_path() {
-        let status = build_subagent_target_status(
-            "/tmp/does-not-exist/subagent.md",
-            None,
-            None,
-        );
+        let status = build_subagent_target_status("/tmp/does-not-exist/subagent.md", None, None);
         assert_eq!(status.kind, SubagentTargetKind::Missing);
         assert!(!status.exists);
         assert!(!status.is_symlink);
@@ -714,11 +710,7 @@ mod tests {
         let target_file = dir.path().join("subagent.md");
         fs::write(&target_file, "hello").expect("write file");
 
-        let status = build_subagent_target_status(
-            &target_file.display().to_string(),
-            None,
-            None,
-        );
+        let status = build_subagent_target_status(&target_file.display().to_string(), None, None);
         assert_eq!(status.kind, SubagentTargetKind::RegularFile);
         assert!(status.exists);
         assert!(!status.is_symlink);

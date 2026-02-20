@@ -489,9 +489,7 @@ export function App() {
                                 ? "border-primary/45 bg-accent/80 text-foreground"
                                 : "border-border/70 bg-transparent text-foreground",
                             )}
-                            onClick={() =>
-                              setSelectedSubagentId(subagent.id)
-                            }
+                            onClick={() => setSelectedSubagentId(subagent.id)}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <p className="truncate text-sm font-medium leading-tight">
