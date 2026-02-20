@@ -609,7 +609,34 @@ struct SyncEngine {
             do {
                 let effectiveCanonical: SkillPackage
                 if let currentCanonical {
-                    effectiveCanonical = currentCanonical
+                    if let replacement = preferredCanonicalReplacement(
+                        options: options,
+                        currentCanonical: currentCanonical,
+                        scope: scope,
+                        workspace: workspace
+                    ) {
+                        let replacedCanonicalBackup = try moveSourceToCanonical(
+                            source: replacement.canonicalPath,
+                            canonical: desiredCanonicalPath,
+                            backupRoot: skillBackupRoot
+                        )
+                        if let replacedCanonicalBackup {
+                            rollbackOps.append(.restoreCanonical(path: desiredCanonicalPath, backup: replacedCanonicalBackup))
+                        }
+                        rollbackOps.append(.move(from: replacement.canonicalPath, to: desiredCanonicalPath))
+                        effectiveCanonical = SkillPackage(
+                            scope: replacement.scope,
+                            workspace: replacement.workspace,
+                            sourceRoot: canonicalRoot,
+                            skillKey: replacement.skillKey,
+                            name: desiredCanonicalPath.lastPathComponent,
+                            canonicalPath: desiredCanonicalPath,
+                            packageType: replacement.packageType,
+                            packageHash: replacement.packageHash
+                        )
+                    } else {
+                        effectiveCanonical = currentCanonical
+                    }
                 } else {
                     guard let source = options.min(by: { lhs, rhs in
                         sourcePriority(scope: scope, package: lhs, workspace: workspace) < sourcePriority(scope: scope, package: rhs, workspace: workspace)
@@ -659,6 +686,37 @@ struct SyncEngine {
         }
 
         return canonicalByKey
+    }
+
+    private func preferredCanonicalReplacement(
+        options: [SkillPackage],
+        currentCanonical: SkillPackage,
+        scope: String,
+        workspace: URL?
+    ) -> SkillPackage? {
+        guard currentCanonical.packageType == "dir" else {
+            return nil
+        }
+
+        let currentIsHealthy = isHealthyCanonicalPayload(currentCanonical)
+        let currentUsesSymlinkMain = isMainSkillFileSymlink(currentCanonical)
+        guard !currentIsHealthy || currentUsesSymlinkMain else {
+            return nil
+        }
+
+        let replacements = options.filter { candidate in
+            standardizedPath(candidate.canonicalPath) != standardizedPath(currentCanonical.canonicalPath)
+                && hasRegularReadableMainSkillFile(candidate)
+        }
+
+        return replacements.min { lhs, rhs in
+            let lp = sourcePriority(scope: scope, package: lhs, workspace: workspace)
+            let rp = sourcePriority(scope: scope, package: rhs, workspace: workspace)
+            if lp != rp {
+                return lp < rp
+            }
+            return lhs.canonicalPath.path < rhs.canonicalPath.path
+        }
     }
 
     private func workspaceCandidates() -> [URL] {
@@ -729,7 +787,7 @@ struct SyncEngine {
             return nil
         }
 
-        guard canonical.isSymbolicLink else {
+        if !canonical.isSymbolicLink && !isDirectory(canonical) {
             throw NSError(
                 domain: "SkillsSync",
                 code: 1,
@@ -957,14 +1015,19 @@ struct SyncEngine {
     private func hashDirectory(_ directory: URL) -> String? {
         guard let enumerator = fileManager.enumerator(
             at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         ) else {
             return nil
         }
 
         let files = (enumerator.allObjects as? [URL] ?? [])
-            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+            .filter { file in
+                guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else {
+                    return false
+                }
+                return values.isRegularFile == true || values.isSymbolicLink == true
+            }
             .sorted { $0.path < $1.path }
 
         var digest = SHA256()
@@ -975,7 +1038,16 @@ struct SyncEngine {
                 let relative = file.path.replacingOccurrences(of: directory.path + "/", with: "")
                 digest.update(data: Data(relative.utf8))
                 digest.update(data: Data([0]))
-                if let bytes = try? Data(contentsOf: file) {
+                if file.isSymbolicLink {
+                    if let resolved = resolvedSymlinkDestination(for: file),
+                       fileManager.fileExists(atPath: resolved.path),
+                       !isDirectory(resolved),
+                       let bytes = try? Data(contentsOf: resolved) {
+                        digest.update(data: bytes)
+                    } else {
+                        digest.update(data: Data("<broken-symlink>".utf8))
+                    }
+                } else if let bytes = try? Data(contentsOf: file) {
                     digest.update(data: bytes)
                 }
                 digest.update(data: Data([0]))
@@ -983,6 +1055,66 @@ struct SyncEngine {
         }
         let hash = digest.finalize()
         return hash.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func mainSkillFileURL(for package: SkillPackage) -> URL {
+        if package.packageType == "dir" {
+            return package.canonicalPath.appendingPathComponent("SKILL.md")
+        }
+        return package.canonicalPath
+    }
+
+    private func isHealthyCanonicalPayload(_ package: SkillPackage) -> Bool {
+        let mainFile = mainSkillFileURL(for: package)
+        guard fileManager.fileExists(atPath: mainFile.path), !isDirectory(mainFile) else {
+            return false
+        }
+        if mainFile.isSymbolicLink && isBrokenSymlink(mainFile) {
+            return false
+        }
+        guard (try? String(contentsOf: mainFile, encoding: .utf8)) != nil else {
+            return false
+        }
+        return true
+    }
+
+    private func hasRegularReadableMainSkillFile(_ package: SkillPackage) -> Bool {
+        let mainFile = mainSkillFileURL(for: package)
+        guard fileManager.fileExists(atPath: mainFile.path),
+              !isDirectory(mainFile),
+              !mainFile.isSymbolicLink else {
+            return false
+        }
+        return (try? String(contentsOf: mainFile, encoding: .utf8)) != nil
+    }
+
+    private func isMainSkillFileSymlink(_ package: SkillPackage) -> Bool {
+        mainSkillFileURL(for: package).isSymbolicLink
+    }
+
+    private func isBrokenSymlink(_ url: URL) -> Bool {
+        guard url.isSymbolicLink else {
+            return false
+        }
+        guard let destination = resolvedSymlinkDestination(for: url) else {
+            return true
+        }
+        return !fileManager.fileExists(atPath: destination.path)
+    }
+
+    private func resolvedSymlinkDestination(for url: URL) -> URL? {
+        guard let raw = try? fileManager.destinationOfSymbolicLink(atPath: url.path) else {
+            return nil
+        }
+        if raw.hasPrefix("/") {
+            return URL(fileURLWithPath: raw)
+        }
+        return url.deletingLastPathComponent().appendingPathComponent(raw).standardizedFileURL
+    }
+
+    private func isDirectory(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        return fileManager.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
     }
 
     private func standardizedPath(_ url: URL) -> String {

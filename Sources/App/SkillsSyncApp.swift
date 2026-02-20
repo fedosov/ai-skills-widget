@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 @main
 struct SkillsSyncApp: App {
@@ -55,7 +56,9 @@ private struct ContentView: View {
                 scopeFilter: $viewModel.scopeFilter,
                 selectedSkillIDs: $viewModel.selectedSkillIDs,
                 displayTitle: viewModel.displayTitle,
-                warmupTitles: viewModel.warmupTitles
+                warmupTitles: viewModel.warmupTitles,
+                validationProvider: viewModel.validation,
+                warmupValidation: viewModel.warmupValidation
             )
             .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
         } detail: {
@@ -67,7 +70,8 @@ private struct ContentView: View {
                 onDelete: viewModel.delete,
                 onMakeGlobal: viewModel.makeGlobal,
                 onDeleteSelected: viewModel.deleteSelectedSkills,
-                previewProvider: viewModel.preview
+                previewProvider: viewModel.preview,
+                validationProvider: viewModel.validation
             )
         }
         .toolbar {
@@ -98,6 +102,8 @@ private struct SidebarView: View {
     @Binding var selectedSkillIDs: Set<String>
     let displayTitle: (SkillRecord) -> String
     let warmupTitles: ([SkillRecord]) async -> Void
+    let validationProvider: (SkillRecord) -> SkillValidationResult
+    let warmupValidation: ([SkillRecord]) async -> Void
 
     private var groups: [SidebarSkillGroup] {
         AppViewModel.sidebarGroups(from: skills)
@@ -127,7 +133,8 @@ private struct SidebarView: View {
                             ForEach(group.skills, id: \.id) { skill in
                                 SkillRowView(
                                     skill: skill,
-                                    title: displayTitle(skill)
+                                    title: displayTitle(skill),
+                                    validation: validationProvider(skill)
                                 )
                                     .tag(skill.id)
                             }
@@ -138,6 +145,7 @@ private struct SidebarView: View {
                 .searchable(text: $searchText, placement: .sidebar, prompt: "Search skills and paths")
                 .task(id: skills.map(\.id).joined(separator: "|")) {
                     await warmupTitles(skills)
+                    await warmupValidation(skills)
                 }
             }
         }
@@ -147,6 +155,7 @@ private struct SidebarView: View {
 private struct SkillRowView: View {
     let skill: SkillRecord
     let title: String
+    let validation: SkillValidationResult
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
@@ -170,6 +179,12 @@ private struct SkillRowView: View {
                     .font(.app(.meta))
                     .foregroundStyle(.red)
             }
+
+            if validation.hasWarnings {
+                Label("\(validation.issues.count) validation issue(s)", systemImage: "exclamationmark.triangle.fill")
+                    .font(.app(.meta))
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(.vertical, AppSpacing.xs)
         .accessibilityElement(children: .combine)
@@ -186,6 +201,7 @@ private struct DetailPaneView: View {
     let onMakeGlobal: (SkillRecord) -> Void
     let onDeleteSelected: () -> Void
     let previewProvider: (SkillRecord) async -> SkillPreviewData
+    let validationProvider: (SkillRecord) -> SkillValidationResult
 
     var body: some View {
         if let singleSelectedSkill {
@@ -195,7 +211,8 @@ private struct DetailPaneView: View {
                 onReveal: onReveal,
                 onDelete: onDelete,
                 onMakeGlobal: onMakeGlobal,
-                previewProvider: previewProvider
+                previewProvider: previewProvider,
+                validationProvider: validationProvider
             )
         } else if selectedSkills.count > 1 {
             MultiSelectionDetailView(
@@ -296,10 +313,12 @@ private struct SkillDetailView: View {
     let onDelete: (SkillRecord) -> Void
     let onMakeGlobal: (SkillRecord) -> Void
     let previewProvider: (SkillRecord) async -> SkillPreviewData
+    let validationProvider: (SkillRecord) -> SkillValidationResult
     @State private var showDeleteConfirmation = false
     @State private var showMakeGlobalConfirmation = false
     @State private var showMakeGlobalSecondConfirmation = false
     @State private var previewData: SkillPreviewData?
+    @State private var copiedIssueID: String?
 
     var body: some View {
         Form {
@@ -339,6 +358,55 @@ private struct SkillDetailView: View {
             Section("Integrity") {
                 LabeledContent("Source file", value: skill.exists ? "Available" : "Missing from disk")
                 LabeledContent("Canonical symlink", value: skill.isSymlinkCanonical ? "Yes" : "No")
+            }
+
+            Section("Validation") {
+                let validation = validationProvider(skill)
+                if validation.hasWarnings {
+                    Label(validation.summaryText, systemImage: "exclamationmark.triangle.fill")
+                        .font(.app(.secondary))
+                        .foregroundStyle(.orange)
+                    Text("You can click issues and the repair prompt will be copied.")
+                        .font(.app(.meta))
+                        .foregroundStyle(.secondary)
+                    ForEach(validation.issues, id: \.id) { issue in
+                        Button {
+                            copyRepairPrompt(for: issue)
+                        } label: {
+                            HStack(alignment: .top, spacing: AppSpacing.sm) {
+                                Image(systemName: copiedIssueID == issue.id ? "checkmark.circle.fill" : "doc.on.doc")
+                                    .foregroundStyle(copiedIssueID == issue.id ? .green : .secondary)
+                                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                                    Text(issue.message)
+                                        .font(.app(.secondary))
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading)
+                                    if let source = issue.sourceLocationText {
+                                        Text("Source: \(source)")
+                                            .font(.app(.meta))
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                            .textSelection(.enabled)
+                                    }
+                                    if !issue.details.isEmpty {
+                                        Text("Details: \(issue.details)")
+                                            .font(.app(.meta))
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.leading)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Copy repair prompt for issue: \(issue.message)")
+                    }
+                } else {
+                    Text("No validation warnings")
+                        .font(.app(.secondary))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Actions") {
@@ -409,6 +477,13 @@ private struct SkillDetailView: View {
         .task(id: "\(skill.id)|\(skill.canonicalSourcePath)") {
             previewData = await previewProvider(skill)
         }
+    }
+
+    private func copyRepairPrompt(for issue: SkillValidationIssue) {
+        let prompt = SkillRepairPromptBuilder.prompt(for: skill, issue: issue)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+        copiedIssueID = issue.id
     }
 }
 

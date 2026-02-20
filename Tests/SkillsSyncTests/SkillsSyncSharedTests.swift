@@ -244,6 +244,172 @@ final class SkillsSyncSharedTests: XCTestCase {
         XCTAssertTrue(preview.relations.contains(where: { $0.kind == .symlink }))
     }
 
+    func testSkillValidatorReturnsNoIssuesForValidSkill() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-valid", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("resources/guide.md"), contents: "guide")
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Valid Skill
+        ---
+
+        # Valid Skill
+
+        Read `resources/guide.md`.
+        """)
+
+        let result = validator.validate(skill: makeSkill(id: "sv1", name: "valid", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.isEmpty)
+        XCTAssertFalse(result.hasWarnings)
+    }
+
+    func testSkillValidatorReportsMissingSkillFileForDirectoryPackage() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-missing", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+
+        let result = validator.validate(skill: makeSkill(id: "sv2", name: "missing", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "missing_skill_md" }))
+        XCTAssertTrue(result.hasWarnings)
+    }
+
+    func testSkillValidatorReportsEmptyMainFile() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-empty", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: "   \n \n")
+
+        let result = validator.validate(skill: makeSkill(id: "sv3", name: "empty", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "empty_main_file" }))
+    }
+
+    func testSkillValidatorReportsMissingTitleWhenNoFrontmatterNameOrHeading() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-no-title", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        Just body text without heading.
+        """)
+
+        let result = validator.validate(skill: makeSkill(id: "sv4", name: "no-title", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "missing_title" }))
+    }
+
+    func testSkillValidatorReportsBrokenLocalReferences() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-broken-ref", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Broken Ref Skill
+        ---
+
+        # Broken Ref Skill
+
+        Read `resources/missing.md`.
+        """)
+
+        let result = validator.validate(skill: makeSkill(id: "sv5", name: "broken", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "broken_reference" }))
+        let issue = try XCTUnwrap(result.issues.first(where: { $0.code == "broken_reference" }))
+        XCTAssertTrue(issue.message.contains("resources/missing.md"))
+        XCTAssertEqual(issue.line, 7)
+        XCTAssertEqual(issue.source, skillDir.appendingPathComponent("SKILL.md").path)
+        XCTAssertFalse(issue.details.isEmpty)
+    }
+
+    func testSkillValidatorReportsBrokenSkillMDSymlinkWithTargetPath() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-broken-symlink", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        let missingTarget = tempDir.appendingPathComponent("legacy/missing-skill.md")
+        try FileManager.default.createDirectory(at: missingTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: skillDir.appendingPathComponent("SKILL.md"),
+            withDestinationURL: missingTarget
+        )
+
+        let result = validator.validate(skill: makeSkill(id: "sv6", name: "broken-symlink", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "broken_skill_md_symlink" }))
+        XCTAssertTrue(result.issues.contains(where: { $0.details.contains(missingTarget.path) }))
+    }
+
+    func testSkillValidatorReportsSkillMDIsSymlinkWhenTargetExists() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-live-symlink", isDirectory: true)
+        try FileManager.default.createDirectory(at: skillDir, withIntermediateDirectories: true)
+        let liveTarget = tempDir.appendingPathComponent("legacy/live-skill.md")
+        try writeFile(liveTarget, contents: """
+        ---
+        title: Via Symlink
+        ---
+
+        # Via Symlink
+        """)
+        try FileManager.default.createSymbolicLink(
+            at: skillDir.appendingPathComponent("SKILL.md"),
+            withDestinationURL: liveTarget
+        )
+
+        let result = validator.validate(skill: makeSkill(id: "sv7", name: "live-symlink", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "skill_md_is_symlink" }))
+    }
+
+    func testRepairPromptBuilderIncludesSkillIdentityAndIssue() {
+        let skill = makeSkill(
+            id: "sv8",
+            name: "agent-helper",
+            scope: "global",
+            sourcePath: "/tmp/agent-helper"
+        )
+        let issue = SkillValidationIssue(
+            code: "broken_reference",
+            message: "Broken reference: agents/flow.md",
+            source: "/tmp/agent-helper/SKILL.md",
+            line: 12,
+            details: "Referenced path does not exist in this skill package."
+        )
+
+        let prompt = SkillRepairPromptBuilder.prompt(for: skill, issue: issue)
+
+        XCTAssertTrue(prompt.contains("Skill: agent-helper"))
+        XCTAssertTrue(prompt.contains("Skill key: agent-helper"))
+        XCTAssertTrue(prompt.contains("Issue (broken_reference): Broken reference: agents/flow.md"))
+        XCTAssertTrue(prompt.contains("Issue source: /tmp/agent-helper/SKILL.md:12"))
+        XCTAssertTrue(prompt.contains("Issue details: Referenced path does not exist in this skill package."))
+        XCTAssertTrue(prompt.contains("Please investigate and repair this skill package."))
+    }
+
+    func testRepairPromptBuilderIncludesCanonicalPathAndScope() {
+        let skill = SkillRecord(
+            id: "sv9",
+            name: "proj-skill",
+            scope: "project",
+            workspace: "/tmp/workspace-a",
+            canonicalSourcePath: "/tmp/workspace-a/.claude/skills/proj-skill",
+            targetPaths: ["/tmp/workspace-a/.agents/skills/proj-skill"],
+            exists: true,
+            isSymlinkCanonical: false,
+            packageType: "dir",
+            skillKey: "proj-skill",
+            symlinkTarget: "/tmp/workspace-a/.claude/skills/proj-skill"
+        )
+        let issue = SkillValidationIssue(
+            code: "missing_title",
+            message: "No title found."
+        )
+
+        let prompt = SkillRepairPromptBuilder.prompt(for: skill, issue: issue)
+
+        XCTAssertTrue(prompt.contains("Scope: project"))
+        XCTAssertTrue(prompt.contains("Canonical path: /tmp/workspace-a/.claude/skills/proj-skill"))
+        XCTAssertTrue(prompt.contains("Workspace: /tmp/workspace-a"))
+    }
+
     private func makeSkill(id: String, name: String, scope: String, sourcePath: String? = nil) -> SkillRecord {
         SkillRecord(
             id: id,

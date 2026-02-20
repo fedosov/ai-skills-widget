@@ -48,9 +48,11 @@ final class AppViewModel: ObservableObject {
     private let preferencesStore: SyncPreferencesStore
     private let makeEngine: () -> any SyncEngineControlling
     private let previewParser: SkillPreviewParser
+    private let skillValidator: SkillValidator
     private var timer: Timer?
     private var isPreferencesLoaded = false
     private var previewCache: [String: CachedSkillPreview] = [:]
+    private var validationCache: [String: CachedSkillValidation] = [:]
 
     var selectedSkills: [SkillRecord] {
         state.skills.filter { selectedSkillIDs.contains($0.id) }
@@ -67,12 +69,14 @@ final class AppViewModel: ObservableObject {
         store: SyncStateStore = SyncStateStore(),
         preferencesStore: SyncPreferencesStore = SyncPreferencesStore(),
         makeEngine: @escaping () -> any SyncEngineControlling = { SyncEngine() },
-        previewParser: SkillPreviewParser = SkillPreviewParser()
+        previewParser: SkillPreviewParser = SkillPreviewParser(),
+        skillValidator: SkillValidator = SkillValidator()
     ) {
         self.store = store
         self.preferencesStore = preferencesStore
         self.makeEngine = makeEngine
         self.previewParser = previewParser
+        self.skillValidator = skillValidator
         autoMigrateToCanonicalSource = preferencesStore.loadSettings().autoMigrateToCanonicalSource
         isPreferencesLoaded = true
     }
@@ -218,6 +222,20 @@ final class AppViewModel: ObservableObject {
         for skill in skills {
             _ = previewData(for: skill)
         }
+    }
+
+    func warmupValidation(for skills: [SkillRecord]) async {
+        for skill in skills {
+            _ = validationData(for: skill)
+        }
+    }
+
+    func validation(for skill: SkillRecord) -> SkillValidationResult {
+        validationData(for: skill)
+    }
+
+    func hasValidationWarnings(for skill: SkillRecord) -> Bool {
+        validationData(for: skill).hasWarnings
     }
 
     func pruneSelectionToCurrentSkills() {
@@ -408,15 +426,37 @@ final class AppViewModel: ObservableObject {
     private func prunePreviewCacheToCurrentState() {
         let valid = Set(state.skills.map(\.id))
         previewCache = previewCache.filter { valid.contains($0.key) }
+        validationCache = validationCache.filter { valid.contains($0.key) }
     }
 
     private func previewSignature(for skill: SkillRecord) -> String {
         let targets = skill.targetPaths.sorted().joined(separator: "|")
-        return "\(skill.id)|\(skill.name)|\(skill.packageType)|\(skill.canonicalSourcePath)|\(targets)"
+        return "\(skill.id)|\(skill.name)|\(skill.exists)|\(skill.packageType)|\(skill.canonicalSourcePath)|\(targets)"
+    }
+
+    private func validationData(for skill: SkillRecord) -> SkillValidationResult {
+        let signature = validationSignature(for: skill)
+        if let cached = validationCache[skill.id], cached.signature == signature {
+            return cached.validation
+        }
+
+        let validation = skillValidator.validate(skill: skill)
+        validationCache[skill.id] = CachedSkillValidation(signature: signature, validation: validation)
+        return validation
+    }
+
+    private func validationSignature(for skill: SkillRecord) -> String {
+        let targets = skill.targetPaths.sorted().joined(separator: "|")
+        return "\(skill.id)|\(skill.name)|\(skill.exists)|\(skill.packageType)|\(skill.canonicalSourcePath)|\(targets)"
     }
 }
 
 private struct CachedSkillPreview {
     let signature: String
     let preview: SkillPreviewData
+}
+
+private struct CachedSkillValidation {
+    let signature: String
+    let validation: SkillValidationResult
 }

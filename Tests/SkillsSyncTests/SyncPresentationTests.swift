@@ -411,6 +411,37 @@ final class SyncPresentationTests: XCTestCase {
         XCTAssertTrue(preview.relations.contains(where: { $0.kind == .symlink }))
     }
 
+    @MainActor
+    func testValidationReturnsIssuesAndWarningFlagForInvalidSkill() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let skill = makeSkill(id: "g-1", name: "Invalid Skill", scope: "global", sourcePath: dir.path)
+        let viewModel = AppViewModel()
+        let result = viewModel.validation(for: skill)
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "missing_skill_md" }))
+        XCTAssertTrue(viewModel.hasValidationWarnings(for: skill))
+    }
+
+    func testSkillsSyncAppContainsValidationSectionAndWarningIndicators() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appFile = repoRoot.appendingPathComponent("Sources/App/SkillsSyncApp.swift")
+        let source = try String(contentsOf: appFile, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("Section(\"Validation\")"))
+        XCTAssertTrue(source.contains("exclamationmark.triangle.fill"))
+        XCTAssertTrue(source.contains("validation issue(s)"))
+        XCTAssertTrue(source.contains("No validation warnings"))
+        XCTAssertTrue(source.contains("You can click issues and the repair prompt will be copied."))
+        XCTAssertTrue(source.contains("SkillRepairPromptBuilder.prompt"))
+        XCTAssertTrue(source.contains("NSPasteboard.general"))
+    }
+
     private func makeSkill(
         id: String,
         name: String,

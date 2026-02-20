@@ -17,11 +17,13 @@
 		543D4F2D0FDFB533D3AF5CA3 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75916AF05215B08D62932045 /* Models.swift */; };
 		5CACADC50C8F8FEC86FDC44F /* SyncPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */; };
 		5D78B2135CD93FC3A887F6B6 /* Intents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFEFD525ED4642D44514C61 /* Intents.swift */; };
+		A80CFAA3773B310AA8FA6897 /* SkillRepairPromptBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90E8B9772FC89BC45E5E297D /* SkillRepairPromptBuilder.swift */; };
 		A88F99EC7D8F55338EFC16B6 /* AppTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78270507E464E5B08B215DAD /* AppTypography.swift */; };
 		A9F2CE96FF593515AD443E77 /* SyncPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8304E9A65C2431ABE9966B64 /* SyncPresentationTests.swift */; };
 		B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 138612FAE9DDE47730C0114D /* SkillsSyncApp.swift */; };
 		C2BBC39037C663095C8A879B /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B1FF0DC6FC627D54E72C2B /* DeepLink.swift */; };
 		E13E1F77A8270C7906CA984D /* SkillPreviewParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BA106E88878C7D61269E19 /* SkillPreviewParser.swift */; };
+		EA2E57E68DC901EA8C2B3216 /* SkillValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9178F25DCE093E88EAD9BC8C /* SkillValidator.swift */; };
 		EFB6C6740C9434EC31932E4B /* SyncPreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */; };
 		F9907DCB3E41D9B58A07A909 /* AppTypographyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8173E401C252C1A9580FC8DA /* AppTypographyTests.swift */; };
 /* End PBXBuildFile section */
@@ -53,6 +55,8 @@
 		8173E401C252C1A9580FC8DA /* AppTypographyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTypographyTests.swift; sourceTree = "<group>"; };
 		8304E9A65C2431ABE9966B64 /* SyncPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPresentationTests.swift; sourceTree = "<group>"; };
 		84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPreferencesStore.swift; sourceTree = "<group>"; };
+		90E8B9772FC89BC45E5E297D /* SkillRepairPromptBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillRepairPromptBuilder.swift; sourceTree = "<group>"; };
+		9178F25DCE093E88EAD9BC8C /* SkillValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillValidator.swift; sourceTree = "<group>"; };
 		C22F5067FCAFB7E48F14D295 /* SyncPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncPresentation.swift; sourceTree = "<group>"; };
 		FD727AEEDFD6802944F1D016 /* SkillsSyncSharedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkillsSyncSharedTests.swift; sourceTree = "<group>"; };
 		FF5F0F7FB0C7F6161A8AD575 /* SkillsSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkillsSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -66,6 +70,8 @@
 				4FFEFD525ED4642D44514C61 /* Intents.swift */,
 				75916AF05215B08D62932045 /* Models.swift */,
 				03BA106E88878C7D61269E19 /* SkillPreviewParser.swift */,
+				90E8B9772FC89BC45E5E297D /* SkillRepairPromptBuilder.swift */,
+				9178F25DCE093E88EAD9BC8C /* SkillValidator.swift */,
 				647720FDC4534B8E25CBEF36 /* SyncEngine.swift */,
 				1CD3472125F35FDBECAFFE8B /* SyncPaths.swift */,
 				84D883371EE793C7A7359EF4 /* SyncPreferencesStore.swift */,
@@ -232,6 +238,8 @@
 				5D78B2135CD93FC3A887F6B6 /* Intents.swift in Sources */,
 				543D4F2D0FDFB533D3AF5CA3 /* Models.swift in Sources */,
 				E13E1F77A8270C7906CA984D /* SkillPreviewParser.swift in Sources */,
+				A80CFAA3773B310AA8FA6897 /* SkillRepairPromptBuilder.swift in Sources */,
+				EA2E57E68DC901EA8C2B3216 /* SkillValidator.swift in Sources */,
 				B7CF5D7FA29FBBEFF0AD7E96 /* SkillsSyncApp.swift in Sources */,
 				424484FD68A9017C4A5CA60F /* SyncEngine.swift in Sources */,
 				5CACADC50C8F8FEC86FDC44F /* SyncPaths.swift in Sources */,

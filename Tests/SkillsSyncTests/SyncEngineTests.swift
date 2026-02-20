@@ -186,6 +186,74 @@ final class SyncEngineTests: XCTestCase {
         )
     }
 
+    func testRunSyncWhenAutoMigrationOnSwapsCanonicalWhenCanonicalSkillFileIsSymlinkAndAlternativeIsRegular() async throws {
+        let key = "swap-canonical-skill"
+        let claudeSkill = path(".claude/skills/\(key)")
+        let agentsSkill = path(".agents/skills/\(key)")
+        let legacyTarget = path(".config/ai-agents/skills/\(key).md")
+
+        try FileManager.default.createDirectory(at: legacyTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("same-body".utf8).write(to: legacyTarget)
+        try FileManager.default.createDirectory(at: claudeSkill, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: claudeSkill.appendingPathComponent("SKILL.md"),
+            withDestinationURL: legacyTarget
+        )
+        try writeSkill(root: path(".agents/skills"), key: key, body: "same-body")
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+
+        let canonical = try XCTUnwrap(state.skills.first(where: { $0.skillKey == key }))
+        let canonicalSkillFile = URL(fileURLWithPath: canonical.canonicalSourcePath, isDirectory: true).appendingPathComponent("SKILL.md")
+        XCTAssertEqual(URL(fileURLWithPath: canonical.canonicalSourcePath).standardizedFileURL.path, claudeSkill.standardizedFileURL.path)
+        XCTAssertFalse(canonicalSkillFile.isTestSymlink)
+        XCTAssertTrue(agentsSkill.isTestSymlink)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: agentsSkill.path), claudeSkill.path)
+    }
+
+    func testRunSyncWhenAutoMigrationOffDoesNotRepairCanonicalSkillFileSymlink() async throws {
+        let key = "no-repair-skill"
+        let claudeSkill = path(".claude/skills/\(key)")
+        let legacyTarget = path(".config/ai-agents/skills/\(key).md")
+
+        try FileManager.default.createDirectory(at: legacyTarget.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("same-body".utf8).write(to: legacyTarget)
+        try FileManager.default.createDirectory(at: claudeSkill, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: claudeSkill.appendingPathComponent("SKILL.md"),
+            withDestinationURL: legacyTarget
+        )
+        try writeAutoMigrationPreference(enabled: false)
+        configureEngine()
+
+        let engine = SyncEngine()
+        _ = try await engine.runSync(trigger: .manual)
+
+        XCTAssertTrue(claudeSkill.appendingPathComponent("SKILL.md").isTestSymlink)
+    }
+
+    func testRunSyncWhenAutoMigrationOnKeepsBrokenCanonicalIfNoHealthyAlternativeExists() async throws {
+        let key = "broken-no-alt"
+        let claudeSkill = path(".claude/skills/\(key)")
+        let missingTarget = path(".config/ai-agents/skills/\(key).md")
+        try FileManager.default.createDirectory(at: claudeSkill, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: claudeSkill.appendingPathComponent("SKILL.md"),
+            withDestinationURL: missingTarget
+        )
+        try writeAutoMigrationPreference(enabled: true)
+        configureEngine()
+
+        let engine = SyncEngine()
+        let state = try await engine.runSync(trigger: .manual)
+
+        XCTAssertEqual(state.sync.status, .ok)
+        XCTAssertTrue(claudeSkill.appendingPathComponent("SKILL.md").isTestSymlink)
+    }
+
     func testDeleteCanonicalSourceRequiresConfirmedTrue() async throws {
         let skillPath = path(".claude/skills/delete-me")
         try FileManager.default.createDirectory(at: skillPath, withIntermediateDirectories: true)
