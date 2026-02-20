@@ -294,6 +294,9 @@ export function App() {
               <ul className="space-y-1">
                 {filteredSkills.map((skill) => {
                   const selected = skill.skill_key === selectedSkillKey
+                  const hasDistinctSkillKey =
+                    skill.name.trim().toLowerCase() !==
+                    skill.skill_key.trim().toLowerCase()
                   return (
                     <li key={skill.id}>
                       <button
@@ -311,17 +314,23 @@ export function App() {
                           <p className="truncate text-sm font-medium leading-tight">
                             {skill.name}
                           </p>
-                          <Badge variant={lifecycleVariant(skill.status)}>
-                            {toTitleCase(skill.status)}
-                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant={lifecycleVariant(skill.status)}>
+                              {toTitleCase(skill.status)}
+                            </Badge>
+                            <Badge variant="outline">{toTitleCase(skill.scope)}</Badge>
+                          </div>
                         </div>
-                        <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-                          {skill.skill_key}
-                        </p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {toTitleCase(skill.scope)}
-                          {skill.workspace ? ` · ${skill.workspace}` : ''}
-                        </p>
+                        {hasDistinctSkillKey ? (
+                          <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                            {skill.skill_key}
+                          </p>
+                        ) : null}
+                        {skill.workspace ? (
+                          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                            {skill.workspace}
+                          </p>
+                        ) : null}
                       </button>
                     </li>
                   )
