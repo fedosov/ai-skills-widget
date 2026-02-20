@@ -1,0 +1,180 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+    --background: 220 23% 97%;
+    --foreground: 223 20% 16%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 223 20% 16%;
+
+    --primary: 217 78% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --muted: 220 22% 94%;
+    --muted-foreground: 220 10% 41%;
+
+    --accent: 214 27% 92%;
+    --accent-foreground: 223 20% 16%;
+
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 82%;
+    --input: 220 15% 82%;
+    --ring: 217 84% 54%;
+
+    --radius-lg: 12px;
+    --radius-md: 9px;
+    --radius-sm: 7px;
+    --control-height: 32px;
+    --control-height-sm: 28px;
+    --focus-ring-width: 2px;
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+      "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+    --font-mono:
+      "SF Mono", "Cascadia Code", "JetBrains Mono", "Consolas",
+      "Liberation Mono", Menlo, monospace;
+  }
+
+  :root[data-platform="macos"] {
+    --radius-lg: 12px;
+    --radius-md: 9px;
+    --radius-sm: 7px;
+    --control-height: 30px;
+    --control-height-sm: 26px;
+    --font-sans:
+      -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+      "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SF Mono", Menlo, Monaco, "Courier New", monospace;
+  }
+
+  :root[data-platform="windows"] {
+    --radius-lg: 10px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+    --control-height: 32px;
+    --control-height-sm: 28px;
+    --font-sans: "Segoe UI Variable", "Segoe UI", Tahoma, Arial, sans-serif;
+    --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+
+  :root[data-platform="linux"] {
+    --radius-lg: 10px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+    --control-height: 32px;
+    --control-height-sm: 28px;
+    --font-sans:
+      Cantarell, "Noto Sans", "DejaVu Sans", Ubuntu, Arial, sans-serif;
+    --font-mono:
+      "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 222 16% 10%;
+      --foreground: 214 24% 93%;
+
+      --card: 223 16% 13%;
+      --card-foreground: 214 24% 93%;
+
+      --primary: 214 90% 66%;
+      --primary-foreground: 222 16% 10%;
+
+      --muted: 220 12% 19%;
+      --muted-foreground: 214 10% 70%;
+
+      --accent: 220 12% 20%;
+      --accent-foreground: 214 24% 93%;
+
+      --destructive: 0 70% 54%;
+      --destructive-foreground: 0 0% 100%;
+
+      --border: 220 11% 28%;
+      --input: 220 11% 30%;
+      --ring: 214 90% 66%;
+    }
+  }
+
+  @media (prefers-contrast: more) {
+    :root {
+      --border: 220 14% 50%;
+      --input: 220 14% 50%;
+    }
+  }
+
+  @media (forced-colors: active) {
+    :root {
+      --background: 0 0% 100%;
+      --foreground: 0 0% 0%;
+      --card: 0 0% 100%;
+      --card-foreground: 0 0% 0%;
+      --primary: 220 100% 45%;
+      --primary-foreground: 0 0% 100%;
+      --muted: 0 0% 95%;
+      --muted-foreground: 0 0% 0%;
+      --accent: 0 0% 90%;
+      --accent-foreground: 0 0% 0%;
+      --border: 0 0% 0%;
+      --input: 0 0% 0%;
+      --ring: 220 100% 45%;
+    }
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    background-image:
+      radial-gradient(
+        circle at 8% -30%,
+        hsl(213 56% 54% / 0.12) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        circle at 96% -16%,
+        hsl(191 52% 46% / 0.1) 0%,
+        transparent 48%
+      );
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.26);
+  }
+
+  [data-contrast="more"] {
+    --border: 220 14% 50%;
+    --input: 220 14% 50%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-dense {
+    letter-spacing: -0.01em;
+  }
+}

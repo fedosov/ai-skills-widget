@@ -1,0 +1,146 @@
+name: Manual Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and publish (example: v0.1.0)"
+        required: true
+        type: string
+      prerelease:
+        description: Mark draft release as prerelease
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  preflight:
+    name: Preflight Release Check
+    runs-on: ubuntu-latest
+    outputs:
+      normalized_tag: ${{ steps.normalize_tag.outputs.tag }}
+      tag_exists: ${{ steps.tag_exists.outputs.exists }}
+    steps:
+      - name: Normalize and validate tag input
+        id: normalize_tag
+        env:
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.tag }}
+        shell: bash
+        run: |
+          raw_tag="${RELEASE_TAG_INPUT}"
+          tag="$(printf '%s' "${raw_tag}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [[ -z "${tag}" ]]; then
+            echo "Input 'tag' must not be empty." >&2
+            exit 1
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Detect whether git tag exists
+        id: tag_exists
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.normalize_tag.outputs.tag }}
+        with:
+          script: |
+            const tag = process.env.RELEASE_TAG;
+            try {
+              await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+              core.setOutput("exists", "true");
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput("exists", "false");
+                return;
+              }
+              throw error;
+            }
+
+      - name: Ensure tag is not a published release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.normalize_tag.outputs.tag }}
+        with:
+          script: |
+            const tag = process.env.RELEASE_TAG;
+            try {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              if (!release.data.draft) {
+                core.setFailed("Tag exists as published release; use a new tag or convert process.");
+              } else {
+                core.info(`Found draft release for tag '${tag}'. Build will update it.`);
+              }
+            } catch (error) {
+              if (error.status === 404) {
+                core.info(`No release found for tag '${tag}'. A new draft release will be created.`);
+                return;
+              }
+              throw error;
+            }
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: preflight
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - macos-latest
+          - windows-latest
+          - ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.tag_exists == 'true' && format('refs/tags/{0}', needs.preflight.outputs.normalized_tag) || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: platform/apps/skillssync-desktop/ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: platform/apps/skillssync-desktop/ui
+        run: npm ci
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: platform
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Build and publish draft release assets
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: platform/apps/skillssync-desktop
+          tagName: ${{ needs.preflight.outputs.normalized_tag }}
+          releaseName: SkillsSync Desktop ${{ needs.preflight.outputs.normalized_tag }}
+          releaseBody: See the assets to download and install this version.
+          releaseDraft: true
+          prerelease: ${{ github.event.inputs.prerelease }}
