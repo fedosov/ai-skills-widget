@@ -2,8 +2,8 @@
 
 use serde::Serialize;
 use skillssync_core::{
-    ScopeFilter, SkillLifecycleStatus, SkillLocator, SkillRecord, SyncEngine, SyncState,
-    SyncTrigger,
+    ScopeFilter, SkillLifecycleStatus, SkillLocator, SkillRecord, SubagentRecord, SyncEngine,
+    SyncState, SyncTrigger,
 };
 use std::cmp::Ordering;
 use std::fs;
@@ -30,6 +30,38 @@ struct SkillDetails {
     skill_dir_tree_preview: Option<String>,
     skill_dir_tree_preview_truncated: bool,
     last_modified_unix_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SubagentDetails {
+    subagent: SubagentRecord,
+    main_file_path: String,
+    main_file_exists: bool,
+    main_file_body_preview: Option<String>,
+    main_file_body_preview_truncated: bool,
+    subagent_dir_tree_preview: Option<String>,
+    subagent_dir_tree_preview_truncated: bool,
+    last_modified_unix_seconds: Option<u64>,
+    target_statuses: Vec<SubagentTargetStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum SubagentTargetKind {
+    Symlink,
+    RegularFile,
+    Missing,
+    Other,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct SubagentTargetStatus {
+    path: String,
+    exists: bool,
+    is_symlink: bool,
+    symlink_target: Option<String>,
+    points_to_canonical: bool,
+    kind: SubagentTargetKind,
 }
 
 #[tauri::command]
@@ -81,6 +113,21 @@ fn list_skills(scope: Option<String>) -> Result<Vec<SkillRecord>, String> {
         .transpose()?
         .unwrap_or(ScopeFilter::All);
     Ok(engine.list_skills(scope_filter))
+}
+
+#[tauri::command]
+fn list_subagents(scope: Option<String>) -> Result<Vec<SubagentRecord>, String> {
+    let engine = SyncEngine::current();
+    let scope_filter = scope
+        .as_deref()
+        .map(|value| {
+            value
+                .parse::<ScopeFilter>()
+                .map_err(|_| format!("unsupported scope: {value}"))
+        })
+        .transpose()?
+        .unwrap_or(ScopeFilter::All);
+    Ok(engine.list_subagents(scope_filter))
 }
 
 #[tauri::command]
@@ -158,6 +205,45 @@ fn get_skill_details(skill_key: String) -> Result<SkillDetails, String> {
 }
 
 #[tauri::command]
+fn get_subagent_details(subagent_id: String) -> Result<SubagentDetails, String> {
+    let engine = SyncEngine::current();
+    let subagent = find_subagent(&engine, &subagent_id)?;
+    let main_file = PathBuf::from(&subagent.canonical_source_path);
+    let canonical_source = fs::canonicalize(&main_file).ok();
+    let subagent_root = main_file
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(&subagent.canonical_source_path));
+    let main_file_exists = main_file.exists();
+    let (main_file_body_preview, main_file_body_preview_truncated) =
+        read_preview(&main_file, MAX_MAIN_FILE_PREVIEW_CHARS);
+    let (subagent_dir_tree_preview, subagent_dir_tree_preview_truncated) =
+        read_skill_dir_tree(&subagent_root, MAX_TREE_ENTRIES);
+    let last_modified_unix_seconds = fs::metadata(&main_file)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|ts| ts.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs());
+    let target_statuses = collect_subagent_target_statuses(
+        &subagent.target_paths,
+        main_file.parent(),
+        canonical_source.as_deref(),
+    );
+
+    Ok(SubagentDetails {
+        subagent,
+        main_file_path: main_file.display().to_string(),
+        main_file_exists,
+        main_file_body_preview,
+        main_file_body_preview_truncated,
+        subagent_dir_tree_preview,
+        subagent_dir_tree_preview_truncated,
+        last_modified_unix_seconds,
+        target_statuses,
+    })
+}
+
+#[tauri::command]
 fn open_skill_path(skill_key: String, target: Option<String>) -> Result<(), String> {
     let engine = SyncEngine::current();
     let skill = find_skill(&engine, &skill_key, None)?;
@@ -165,6 +251,26 @@ fn open_skill_path(skill_key: String, target: Option<String>) -> Result<(), Stri
     let path = match selected_target.as_str() {
         "folder" => PathBuf::from(&skill.canonical_source_path),
         "file" => resolve_main_skill_file(&skill),
+        other => {
+            return Err(format!(
+                "unsupported target: {other} (allowed: folder|file)"
+            ));
+        }
+    };
+    open_path(&path)
+}
+
+#[tauri::command]
+fn open_subagent_path(subagent_id: String, target: Option<String>) -> Result<(), String> {
+    let engine = SyncEngine::current();
+    let subagent = find_subagent(&engine, &subagent_id)?;
+    let selected_target = target.unwrap_or_else(|| String::from("folder"));
+    let path = match selected_target.as_str() {
+        "folder" => PathBuf::from(&subagent.canonical_source_path)
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(&subagent.canonical_source_path)),
+        "file" => PathBuf::from(&subagent.canonical_source_path),
         other => {
             return Err(format!(
                 "unsupported target: {other} (allowed: folder|file)"
@@ -223,6 +329,12 @@ fn find_skill(
             status,
         })
         .ok_or_else(|| format!("skill not found: {skill_key}"))
+}
+
+fn find_subagent(engine: &SyncEngine, subagent_id: &str) -> Result<SubagentRecord, String> {
+    engine
+        .find_subagent_by_id(subagent_id)
+        .ok_or_else(|| format!("subagent not found: {subagent_id}"))
 }
 
 fn resolve_main_skill_file(skill: &SkillRecord) -> PathBuf {
@@ -290,6 +402,96 @@ fn read_skill_dir_tree(root: &Path, max_entries: usize) -> (Option<String>, bool
     );
 
     (Some(lines.join("\n")), truncated)
+}
+
+fn collect_subagent_target_statuses(
+    target_paths: &[String],
+    canonical_parent: Option<&Path>,
+    canonical_source: Option<&Path>,
+) -> Vec<SubagentTargetStatus> {
+    target_paths
+        .iter()
+        .map(|path| build_subagent_target_status(path, canonical_parent, canonical_source))
+        .collect()
+}
+
+fn build_subagent_target_status(
+    path: &str,
+    canonical_parent: Option<&Path>,
+    canonical_source: Option<&Path>,
+) -> SubagentTargetStatus {
+    let target_path = PathBuf::from(path);
+    let Ok(metadata) = fs::symlink_metadata(&target_path) else {
+        return SubagentTargetStatus {
+            path: path.to_owned(),
+            exists: false,
+            is_symlink: false,
+            symlink_target: None,
+            points_to_canonical: false,
+            kind: SubagentTargetKind::Missing,
+        };
+    };
+
+    let file_type = metadata.file_type();
+    let is_symlink = file_type.is_symlink();
+
+    if is_symlink {
+        let raw_link = fs::read_link(&target_path).ok();
+        let resolved_link = raw_link.as_ref().map(|link| {
+            if link.is_absolute() {
+                link.clone()
+            } else {
+                target_path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default()
+                    .join(link)
+            }
+        });
+        let points_to_canonical = resolved_link
+            .as_deref()
+            .and_then(|resolved| canonicalize_with_base(resolved, canonical_parent))
+            .zip(canonical_source)
+            .map(|(resolved, canonical)| resolved == canonical)
+            .unwrap_or(false);
+
+        return SubagentTargetStatus {
+            path: path.to_owned(),
+            exists: true,
+            is_symlink: true,
+            symlink_target: raw_link.map(|link| link.display().to_string()),
+            points_to_canonical,
+            kind: SubagentTargetKind::Symlink,
+        };
+    }
+
+    if file_type.is_file() {
+        return SubagentTargetStatus {
+            path: path.to_owned(),
+            exists: true,
+            is_symlink: false,
+            symlink_target: None,
+            points_to_canonical: false,
+            kind: SubagentTargetKind::RegularFile,
+        };
+    }
+
+    SubagentTargetStatus {
+        path: path.to_owned(),
+        exists: true,
+        is_symlink: false,
+        symlink_target: None,
+        points_to_canonical: false,
+        kind: SubagentTargetKind::Other,
+    }
+}
+
+fn canonicalize_with_base(path: &Path, base_dir: Option<&Path>) -> Option<PathBuf> {
+    fs::canonicalize(path).ok().or_else(|| {
+        base_dir
+            .map(|base| base.join(path))
+            .and_then(|joined| fs::canonicalize(joined).ok())
+    })
 }
 
 fn render_tree_entries(
@@ -412,13 +614,16 @@ fn main() {
             get_starred_skill_ids,
             set_skill_starred,
             list_skills,
+            list_subagents,
             delete_skill,
             archive_skill,
             restore_skill,
             make_global,
             rename_skill,
             get_skill_details,
+            get_subagent_details,
             open_skill_path,
+            open_subagent_path,
             get_platform_context,
         ])
         .run(tauri::generate_context!())
@@ -427,7 +632,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_platform_context, normalize_os_name, read_skill_dir_tree};
+    use super::{
+        build_platform_context, build_subagent_target_status, normalize_os_name, read_skill_dir_tree,
+        SubagentTargetKind,
+    };
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -484,5 +692,82 @@ mod tests {
         let mac = build_platform_context("macos", Some("GNOME"));
         assert_eq!(mac.os, "macos");
         assert_eq!(mac.linux_desktop, None);
+    }
+
+    #[test]
+    fn build_subagent_target_status_marks_missing_path() {
+        let status = build_subagent_target_status(
+            "/tmp/does-not-exist/subagent.md",
+            None,
+            None,
+        );
+        assert_eq!(status.kind, SubagentTargetKind::Missing);
+        assert!(!status.exists);
+        assert!(!status.is_symlink);
+        assert_eq!(status.symlink_target, None);
+        assert!(!status.points_to_canonical);
+    }
+
+    #[test]
+    fn build_subagent_target_status_marks_regular_file() {
+        let dir = tempdir().expect("create tempdir");
+        let target_file = dir.path().join("subagent.md");
+        fs::write(&target_file, "hello").expect("write file");
+
+        let status = build_subagent_target_status(
+            &target_file.display().to_string(),
+            None,
+            None,
+        );
+        assert_eq!(status.kind, SubagentTargetKind::RegularFile);
+        assert!(status.exists);
+        assert!(!status.is_symlink);
+        assert_eq!(status.symlink_target, None);
+        assert!(!status.points_to_canonical);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_subagent_target_status_marks_symlink_and_canonical_match() {
+        use std::os::unix::fs as unix_fs;
+
+        let dir = tempdir().expect("create tempdir");
+        let canonical = dir.path().join("canonical.md");
+        fs::write(&canonical, "hello").expect("write canonical");
+
+        let links_dir = dir.path().join("links");
+        fs::create_dir_all(&links_dir).expect("create links dir");
+        let link_path = links_dir.join("subagent.md");
+        unix_fs::symlink("../canonical.md", &link_path).expect("create symlink");
+
+        let canonical_path = fs::canonicalize(&canonical).expect("canonicalize");
+        let status = build_subagent_target_status(
+            &link_path.display().to_string(),
+            None,
+            Some(canonical_path.as_path()),
+        );
+
+        assert_eq!(status.kind, SubagentTargetKind::Symlink);
+        assert!(status.exists);
+        assert!(status.is_symlink);
+        assert_eq!(status.symlink_target, Some(String::from("../canonical.md")));
+        assert!(status.points_to_canonical);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn build_subagent_target_status_handles_broken_symlink() {
+        use std::os::unix::fs as unix_fs;
+
+        let dir = tempdir().expect("create tempdir");
+        let link_path = dir.path().join("broken.md");
+        unix_fs::symlink("missing.md", &link_path).expect("create broken symlink");
+
+        let status = build_subagent_target_status(&link_path.display().to_string(), None, None);
+        assert_eq!(status.kind, SubagentTargetKind::Symlink);
+        assert!(status.exists);
+        assert!(status.is_symlink);
+        assert_eq!(status.symlink_target, Some(String::from("missing.md")));
+        assert!(!status.points_to_canonical);
     }
 }

@@ -15,9 +15,12 @@ vi.mock("./tauriApi", () => ({
   getState: vi.fn(),
   runSync: vi.fn(),
   getSkillDetails: vi.fn(),
+  getSubagentDetails: vi.fn(),
+  listSubagents: vi.fn(),
   mutateSkill: vi.fn(),
   renameSkill: vi.fn(),
   openSkillPath: vi.fn(),
+  openSubagentPath: vi.fn(),
   getStarredSkillIds: vi.fn(),
   setSkillStarred: vi.fn(),
 }));
@@ -60,6 +63,7 @@ const archivedSkill: SkillRecord = {
 
 function buildState(skills: SkillRecord[]): SyncState {
   return {
+    version: 2,
     generated_at: "2026-02-20T17:00:00Z",
     sync: { status: "ok", error: null },
     summary: {
@@ -71,7 +75,13 @@ function buildState(skills: SkillRecord[]): SyncState {
       ).length,
       conflict_count: 0,
     },
+    subagent_summary: {
+      global_count: 0,
+      project_count: 0,
+      conflict_count: 0,
+    },
     skills,
+    subagents: [],
   };
 }
 
@@ -99,6 +109,43 @@ function setApiDefaults(
 ) {
   vi.mocked(tauriApi.getState).mockResolvedValue(state);
   vi.mocked(tauriApi.getStarredSkillIds).mockResolvedValue(starredSkillIds);
+  vi.mocked(tauriApi.listSubagents).mockResolvedValue([]);
+  vi.mocked(tauriApi.getSubagentDetails).mockResolvedValue({
+    subagent: {
+      id: "sub-1",
+      name: "Subagent",
+      description: "Desc",
+      scope: "global",
+      workspace: null,
+      canonical_source_path: "/tmp/home/.claude/agents/subagent.md",
+      target_paths: ["/tmp/home/.claude/agents/subagent.md"],
+      exists: true,
+      is_symlink_canonical: false,
+      package_type: "file",
+      subagent_key: "subagent",
+      symlink_target: "/tmp/home/.claude/agents/subagent.md",
+      model: null,
+      tools: [],
+      codex_tools_ignored: false,
+    },
+    main_file_path: "/tmp/home/.claude/agents/subagent.md",
+    main_file_exists: true,
+    main_file_body_preview: "# Subagent",
+    main_file_body_preview_truncated: false,
+    subagent_dir_tree_preview: "agents/\n`-- subagent.md",
+    subagent_dir_tree_preview_truncated: false,
+    last_modified_unix_seconds: 1_700_000_000,
+    target_statuses: [
+      {
+        path: "/tmp/home/.claude/agents/subagent.md",
+        exists: true,
+        is_symlink: true,
+        symlink_target: "/tmp/home/.agents/subagents/subagent.md",
+        points_to_canonical: true,
+        kind: "symlink",
+      },
+    ],
+  });
   vi.mocked(tauriApi.setSkillStarred).mockImplementation((_skillId, starred) =>
     Promise.resolve(starred ? ["project-1"] : []),
   );
@@ -106,6 +153,7 @@ function setApiDefaults(
   vi.mocked(tauriApi.mutateSkill).mockResolvedValue(state);
   vi.mocked(tauriApi.renameSkill).mockResolvedValue(state);
   vi.mocked(tauriApi.openSkillPath).mockResolvedValue(undefined);
+  vi.mocked(tauriApi.openSubagentPath).mockResolvedValue(undefined);
   vi.mocked(tauriApi.getSkillDetails).mockImplementation((skillKey) => {
     const details = detailsBySkillKey[skillKey];
     if (!details) {
@@ -184,7 +232,7 @@ describe("App critical actions", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: projectSkill.name });
-    expect(tauriApi.getState).toHaveBeenCalledTimes(1);
+    expect(tauriApi.runSync).toHaveBeenCalledTimes(1);
     expect(tauriApi.getSkillDetails).toHaveBeenCalledWith(
       projectSkill.skill_key,
     );
@@ -254,7 +302,7 @@ describe("App critical actions", () => {
     expect(namesAfter[2]).toBe("Archived Skill");
   });
 
-  it("refreshes from toolbar without sync button", async () => {
+  it("refreshes from toolbar via run_sync", async () => {
     const state = buildState([projectSkill]);
     setApiDefaults(state, {
       [projectSkill.skill_key]: buildDetails(projectSkill),
@@ -269,7 +317,51 @@ describe("App critical actions", () => {
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
 
-    expect(tauriApi.getState).toHaveBeenCalledTimes(2);
+    expect(tauriApi.runSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to cached state when run_sync fails", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+    vi.mocked(tauriApi.runSync).mockRejectedValueOnce(new Error("sync failed"));
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: projectSkill.name });
+    expect(tauriApi.getState).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads subagents only after run_sync resolves", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+
+    let resolveSync: ((value: SyncState) => void) | null = null;
+    vi.mocked(tauriApi.runSync).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSync = resolve;
+        }),
+    );
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(tauriApi.runSync).toHaveBeenCalledTimes(1);
+    });
+    expect(tauriApi.listSubagents).not.toHaveBeenCalled();
+
+    if (!resolveSync) {
+      throw new Error("runSync resolver was not initialized");
+    }
+    resolveSync(state);
+
+    await waitFor(() => {
+      expect(tauriApi.listSubagents).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("archives skill via in-app confirmation flow", async () => {
@@ -496,5 +588,103 @@ describe("App critical actions", () => {
       ).toBeInTheDocument();
     });
     expect(tauriApi.renameSkill).not.toHaveBeenCalled();
+  });
+
+  it("renders subagent source and link transparency sections", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+    vi.mocked(tauriApi.listSubagents).mockResolvedValue([
+      {
+        id: "sub-1",
+        name: "Subagent",
+        description: "Desc",
+        scope: "global",
+        workspace: null,
+        canonical_source_path: "/tmp/home/.agents/subagents/subagent.md",
+        target_paths: [
+          "/tmp/home/.claude/agents/subagent.md",
+          "/tmp/home/.cursor/agents/subagent.md",
+        ],
+        exists: true,
+        is_symlink_canonical: false,
+        package_type: "file",
+        subagent_key: "subagent",
+        symlink_target: "/tmp/home/.agents/subagents/subagent.md",
+        model: null,
+        tools: [],
+        codex_tools_ignored: false,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    await user.click(screen.getByRole("button", { name: "Subagents" }));
+
+    expect(screen.getByText("Canonical path")).toBeInTheDocument();
+    expect(screen.getByText("Targets")).toBeInTheDocument();
+    expect(screen.getByText("Target link status")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("/tmp/home/.claude/agents/subagent.md").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("loads selected subagent details by unique subagent id", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+    vi.mocked(tauriApi.listSubagents).mockResolvedValue([
+      {
+        id: "sub-global",
+        name: "Reviewer (Global)",
+        description: "Global reviewer",
+        scope: "global",
+        workspace: null,
+        canonical_source_path: "/tmp/home/.agents/subagents/reviewer.md",
+        target_paths: ["/tmp/home/.claude/agents/reviewer.md"],
+        exists: true,
+        is_symlink_canonical: false,
+        package_type: "file",
+        subagent_key: "reviewer",
+        symlink_target: "/tmp/home/.agents/subagents/reviewer.md",
+        model: null,
+        tools: [],
+        codex_tools_ignored: false,
+      },
+      {
+        id: "sub-project",
+        name: "Reviewer (Project)",
+        description: "Project reviewer",
+        scope: "project",
+        workspace: "/tmp/workspace-a",
+        canonical_source_path: "/tmp/workspace-a/.claude/agents/reviewer.md",
+        target_paths: ["/tmp/workspace-a/.cursor/agents/reviewer.md"],
+        exists: true,
+        is_symlink_canonical: false,
+        package_type: "file",
+        subagent_key: "reviewer",
+        symlink_target: "/tmp/workspace-a/.claude/agents/reviewer.md",
+        model: null,
+        tools: [],
+        codex_tools_ignored: false,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    await user.click(screen.getByRole("button", { name: "Subagents" }));
+    await user.click(screen.getByRole("button", { name: /Reviewer \(Project\)/ }));
+
+    await waitFor(() => {
+      expect(tauriApi.getSubagentDetails).toHaveBeenLastCalledWith(
+        "sub-project",
+      );
+    });
   });
 });

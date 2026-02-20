@@ -38,5 +38,8 @@ pub fn default_watch_roots(home: &Path) -> Vec<std::path::PathBuf> {
         home.join(".claude").join("skills"),
         home.join(".agents").join("skills"),
         home.join(".codex").join("skills"),
+        home.join(".agents").join("subagents"),
+        home.join(".claude").join("agents"),
+        home.join(".cursor").join("agents"),
     ]
 }

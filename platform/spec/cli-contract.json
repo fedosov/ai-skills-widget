@@ -12,6 +12,11 @@
       "example": "skillssync list --scope project"
     },
     {
+      "name": "list-subagents",
+      "args": ["--scope", "--json"],
+      "example": "skillssync list-subagents --scope project --json"
+    },
+    {
       "name": "delete",
       "args": ["--skill-key", "--confirm"],
       "example": "skillssync delete --skill-key alpha --confirm"

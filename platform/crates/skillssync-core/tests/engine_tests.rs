@@ -12,6 +12,12 @@ fn write_skill(root: &Path, key: &str, body: &str) {
     fs::write(skill_path, body).expect("write skill");
 }
 
+fn write_subagent(root: &Path, key: &str, body: &str) {
+    let subagent_path = root.join(format!("{key}.md"));
+    fs::create_dir_all(subagent_path.parent().expect("parent")).expect("create parent");
+    fs::write(subagent_path, body).expect("write subagent");
+}
+
 fn engine_in_temp(temp: &TempDir) -> SyncEngine {
     let home = temp.path().join("home");
     let runtime = temp.path().join("runtime");
@@ -118,11 +124,11 @@ fn run_sync_reports_conflict_when_hashes_differ() {
     );
 
     let error = engine.run_sync(SyncTrigger::Manual).expect_err("must fail");
-    assert!(error.to_string().contains("Detected 1 skill conflict"));
-    assert_eq!(
-        engine.load_state().sync.status,
-        skillssync_core::SyncHealthStatus::Failed
-    );
+    assert!(error.to_string().contains("Detected 1 conflict"));
+    let persisted = engine.load_state();
+    assert_eq!(persisted.sync.status, skillssync_core::SyncHealthStatus::Failed);
+    assert_eq!(persisted.summary.conflict_count, 1);
+    assert_eq!(persisted.subagent_summary.conflict_count, 0);
 }
 
 #[test]
@@ -475,4 +481,153 @@ fn set_skill_starred_prunes_unknown_ids_and_deduplicates() {
         .set_skill_starred(&alpha, true)
         .expect("normalize starred ids");
     assert_eq!(starred, vec![alpha.clone()]);
+}
+
+#[test]
+fn run_sync_discovers_global_and_project_subagents() {
+    let temp = TempDir::new().expect("tempdir");
+    let engine = engine_in_temp(&temp);
+
+    write_subagent(
+        &engine
+            .environment()
+            .home_directory
+            .join(".claude")
+            .join("agents"),
+        "reviewer",
+        "---\nname: reviewer\ndescription: Review code\n---\n\nYou are a reviewer.",
+    );
+
+    let workspace = engine
+        .environment()
+        .home_directory
+        .join("Dev")
+        .join("workspace-a");
+    write_subagent(
+        &workspace.join(".cursor").join("agents"),
+        "debugger",
+        "---\nname: debugger\ndescription: Debug issues\n---\n\nYou are a debugger.",
+    );
+
+    let state = engine.run_sync(SyncTrigger::Manual).expect("sync");
+    assert_eq!(state.subagent_summary.global_count, 1);
+    assert_eq!(state.subagent_summary.project_count, 1);
+    assert_eq!(state.subagents.len(), 2);
+}
+
+#[test]
+fn run_sync_reports_conflict_for_subagents_when_hashes_differ() {
+    let temp = TempDir::new().expect("tempdir");
+    let engine = engine_in_temp(&temp);
+
+    write_subagent(
+        &engine
+            .environment()
+            .home_directory
+            .join(".claude")
+            .join("agents"),
+        "reviewer",
+        "---\nname: reviewer\ndescription: Review code\n---\n\nA",
+    );
+    write_subagent(
+        &engine
+            .environment()
+            .home_directory
+            .join(".cursor")
+            .join("agents"),
+        "reviewer",
+        "---\nname: reviewer\ndescription: Review code\n---\n\nB",
+    );
+
+    let error = engine.run_sync(SyncTrigger::Manual).expect_err("must fail");
+    assert!(error.to_string().contains("Detected 1 conflict"));
+
+    let persisted = engine.load_state();
+    assert_eq!(persisted.summary.conflict_count, 0);
+    assert_eq!(persisted.subagent_summary.conflict_count, 1);
+}
+
+#[test]
+fn run_sync_writes_codex_subagent_managed_blocks() {
+    let temp = TempDir::new().expect("tempdir");
+    let engine = engine_in_temp(&temp);
+    let workspace = engine
+        .environment()
+        .home_directory
+        .join("Dev")
+        .join("workspace-a");
+
+    write_subagent(
+        &engine
+            .environment()
+            .home_directory
+            .join(".agents")
+            .join("subagents"),
+        "reviewer",
+        "---\nname: reviewer\ndescription: Review code\nmodel: gpt-5.3-codex\ntools: [Read, Grep]\n---\n\nGlobal reviewer instructions.",
+    );
+    write_subagent(
+        &workspace.join(".claude").join("agents"),
+        "debugger",
+        "---\nname: debugger\ndescription: Debug issues\n---\n\nProject debugger instructions.",
+    );
+
+    let state = engine.run_sync(SyncTrigger::Manual).expect("sync");
+    assert!(state
+        .subagents
+        .iter()
+        .any(|item| item.subagent_key == "reviewer" && item.codex_tools_ignored));
+
+    let global_cfg = engine
+        .environment()
+        .home_directory
+        .join(".codex")
+        .join("config.toml");
+    let global_raw = fs::read_to_string(global_cfg).expect("global codex config");
+    assert!(global_raw.contains("# skills-sync:subagents:begin"));
+    assert!(global_raw.contains("[agents.reviewer]"));
+
+    let project_cfg = workspace.join(".codex").join("config.toml");
+    let project_raw = fs::read_to_string(project_cfg).expect("project codex config");
+    assert!(project_raw.contains("# skills-sync:subagents:begin"));
+    assert!(project_raw.contains("[agents.debugger]"));
+}
+
+#[test]
+fn run_sync_clears_codex_subagent_managed_blocks_when_subagents_removed() {
+    let temp = TempDir::new().expect("tempdir");
+    let engine = engine_in_temp(&temp);
+
+    let subagent_path = engine
+        .environment()
+        .home_directory
+        .join(".agents")
+        .join("subagents")
+        .join("reviewer.md");
+    write_subagent(
+        &engine
+            .environment()
+            .home_directory
+            .join(".agents")
+            .join("subagents"),
+        "reviewer",
+        "---\nname: reviewer\ndescription: Review code\n---\n\nGlobal reviewer instructions.",
+    );
+
+    let _ = engine.run_sync(SyncTrigger::Manual).expect("first sync");
+    let global_cfg = engine
+        .environment()
+        .home_directory
+        .join(".codex")
+        .join("config.toml");
+    let before = fs::read_to_string(&global_cfg).expect("global codex config before");
+    assert!(before.contains("[agents.reviewer]"));
+
+    fs::remove_file(&subagent_path).expect("remove subagent");
+    let state = engine.run_sync(SyncTrigger::Manual).expect("second sync");
+    assert!(state.subagents.is_empty());
+
+    let after = fs::read_to_string(global_cfg).expect("global codex config after");
+    assert!(after.contains("# skills-sync:subagents:begin"));
+    assert!(!after.contains("[agents.reviewer]"));
 }

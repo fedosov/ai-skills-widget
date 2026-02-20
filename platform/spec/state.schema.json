@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://skillssync.dev/schema/state.v1.json",
+  "$id": "https://skillssync.dev/schema/state.v2.json",
   "title": "SkillsSync State",
   "type": "object",
-  "required": ["version", "generated_at", "sync", "summary", "skills", "top_skills"],
+  "required": ["version", "generated_at", "sync", "summary", "subagent_summary", "skills", "subagents", "top_skills", "top_subagents"],
   "properties": {
-    "version": { "type": "integer", "const": 1 },
+    "version": { "type": "integer", "const": 2 },
     "generated_at": { "type": "string", "format": "date-time" },
     "sync": {
       "type": "object",
@@ -19,6 +19,15 @@
       }
     },
     "summary": {
+      "type": "object",
+      "required": ["global_count", "project_count", "conflict_count"],
+      "properties": {
+        "global_count": { "type": "integer", "minimum": 0 },
+        "project_count": { "type": "integer", "minimum": 0 },
+        "conflict_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "subagent_summary": {
       "type": "object",
       "required": ["global_count", "project_count", "conflict_count"],
       "properties": {
@@ -70,6 +79,50 @@
       }
     },
     "top_skills": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "subagents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "scope",
+          "workspace",
+          "canonical_source_path",
+          "target_paths",
+          "exists",
+          "is_symlink_canonical",
+          "package_type",
+          "subagent_key",
+          "symlink_target",
+          "model",
+          "tools",
+          "codex_tools_ignored"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "scope": { "type": "string" },
+          "workspace": { "type": ["string", "null"] },
+          "canonical_source_path": { "type": "string" },
+          "target_paths": { "type": "array", "items": { "type": "string" } },
+          "exists": { "type": "boolean" },
+          "is_symlink_canonical": { "type": "boolean" },
+          "package_type": { "type": "string" },
+          "subagent_key": { "type": "string" },
+          "symlink_target": { "type": "string" },
+          "model": { "type": ["string", "null"] },
+          "tools": { "type": "array", "items": { "type": "string" } },
+          "codex_tools_ignored": { "type": "boolean" }
+        }
+      }
+    },
+    "top_subagents": {
       "type": "array",
       "items": { "type": "string" }
     }

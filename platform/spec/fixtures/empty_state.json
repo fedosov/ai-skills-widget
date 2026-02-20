@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "generated_at": "",
   "sync": {
     "status": "unknown",
@@ -13,6 +13,13 @@
     "project_count": 0,
     "conflict_count": 0
   },
+  "subagent_summary": {
+    "global_count": 0,
+    "project_count": 0,
+    "conflict_count": 0
+  },
   "skills": [],
-  "top_skills": []
+  "subagents": [],
+  "top_skills": [],
+  "top_subagents": []
 }

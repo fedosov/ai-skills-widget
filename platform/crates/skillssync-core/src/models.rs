@@ -16,20 +16,29 @@ pub struct SyncState {
     pub generated_at: String,
     pub sync: SyncMetadata,
     pub summary: SyncSummary,
+    #[serde(default, rename = "subagent_summary")]
+    pub subagent_summary: SyncSummary,
     pub skills: Vec<SkillRecord>,
+    #[serde(default)]
+    pub subagents: Vec<SubagentRecord>,
     #[serde(rename = "top_skills")]
     pub top_skills: Vec<String>,
+    #[serde(default, rename = "top_subagents")]
+    pub top_subagents: Vec<String>,
 }
 
 impl SyncState {
     pub fn empty() -> Self {
         Self {
-            version: 1,
+            version: 2,
             generated_at: String::new(),
             sync: SyncMetadata::empty(),
             summary: SyncSummary::empty(),
+            subagent_summary: SyncSummary::empty(),
             skills: Vec::new(),
+            subagents: Vec::new(),
             top_skills: Vec::new(),
+            top_subagents: Vec::new(),
         }
     }
 }
@@ -58,7 +67,7 @@ impl SyncMetadata {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SyncSummary {
     #[serde(rename = "global_count")]
     pub global_count: usize,
@@ -116,6 +125,33 @@ pub struct SkillRecord {
     pub archived_original_workspace: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SubagentRecord {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub scope: String,
+    pub workspace: Option<String>,
+    #[serde(rename = "canonical_source_path")]
+    pub canonical_source_path: String,
+    #[serde(rename = "target_paths")]
+    pub target_paths: Vec<String>,
+    pub exists: bool,
+    #[serde(rename = "is_symlink_canonical")]
+    pub is_symlink_canonical: bool,
+    #[serde(rename = "package_type")]
+    pub package_type: String,
+    #[serde(rename = "subagent_key")]
+    pub subagent_key: String,
+    #[serde(rename = "symlink_target")]
+    pub symlink_target: String,
+    pub model: Option<String>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default, rename = "codex_tools_ignored")]
+    pub codex_tools_ignored: bool,
+}
+
 fn default_skill_status() -> SkillLifecycleStatus {
     SkillLifecycleStatus::Active
 }
@@ -167,8 +203,18 @@ impl TryFrom<&str> for SyncTrigger {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncConflict {
+    #[serde(default)]
+    pub kind: SyncConflictKind,
     pub scope: String,
     pub workspace: Option<String>,
     #[serde(rename = "skill_key")]
     pub skill_key: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncConflictKind {
+    #[default]
+    Skill,
+    Subagent,
 }

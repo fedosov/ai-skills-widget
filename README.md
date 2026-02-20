@@ -1,8 +1,8 @@
 # SkillsSync
 
-Keep one canonical skill catalog and sync it across agent runtimes (`Claude Code`, `Codex`, and others).
+Keep one canonical catalog for `skills` and `subagents`, then sync it across agent runtimes (`Claude Code`, `Cursor`, `Codex`, and others).
 
-If a skill exists in one ecosystem but is missing in another, SkillsSync reconciles it by rebuilding managed links and updating managed registry entries.
+If an item exists in one ecosystem but is missing in another, SkillsSync reconciles it by rebuilding managed links and updating managed registry entries.
 
 ## Screenshot
 
@@ -10,27 +10,32 @@ If a skill exists in one ecosystem but is missing in another, SkillsSync reconci
 
 ## What SkillsSync Solves
 
-- Stops skill drift across `~/.claude/skills`, `~/.agents/skills`, and `~/.codex/skills`.
-- Prevents "it exists in Claude Code but does not appear in Codex" situations.
-- Gives a safe lifecycle for cleanup: archive, restore, promote project skills to global, rename, delete.
+- Stops drift across `skills` and `subagents` roots:
+  - `skills`: `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`
+  - `subagents`: `~/.claude/agents`, `~/.cursor/agents`, `~/.agents/subagents`
+- Prevents "it exists in Claude/Cursor but does not appear in Codex" situations.
+- Gives a safe lifecycle for `skills`: archive, restore, promote project skills to global, rename, delete.
+- Provides transparent `subagent` sync diagnostics in desktop UI (canonical source, targets, link status).
 - Keeps sync behavior deterministic with explicit conflict handling.
 
 ## Why This Exists
 
-Without synchronization, teams accumulate duplicate and stale skill folders across multiple agent directories. That creates inconsistent behavior between tools and broken expectations for users.
+Without synchronization, teams accumulate duplicate and stale skills/subagents across multiple agent directories. That creates inconsistent behavior between tools and broken expectations for users.
 
-SkillsSync provides one sync engine that discovers skills, validates consistency, and applies a managed cross-agent layout.
+SkillsSync provides one sync engine that discovers skills and subagents, validates consistency, and applies a managed cross-agent layout.
 
 ## How Sync + Validation Works
 
 Validation is part of the normal sync cycle (not a separate tool):
 
-1. Discover skill packages in global and project roots.
+1. Discover `skill` packages and `subagent` markdown configs in global and project roots.
 2. Compare duplicates by `skill_key` and content hash.
-3. Mark conflicts when same key has different content.
+3. Mark conflicts when same key has different content (for both object types).
 4. Optionally migrate canonical sources to Claude roots via `auto_migrate_to_canonical_source`.
 5. Rebuild/update managed symlinks for target agent directories.
-6. Update managed block in `~/.codex/config.toml` (`# skills-sync:begin` ... `# skills-sync:end`).
+6. Update managed blocks in `~/.codex/config.toml`:
+   - skills: `# skills-sync:begin` ... `# skills-sync:end`
+   - subagents: `# skills-sync:subagents:begin` ... `# skills-sync:subagents:end`
 
 Result: once sync succeeds, cross-agent visibility is reconciled automatically.
 
@@ -48,6 +53,8 @@ Supported actions:
 
 All destructive/structural actions require confirmation.
 
+`Subagents` in v1.1 are `sync + inspect` (read-only lifecycle): discover, validate, sync, and inspect source/targets/symlink status.
+
 ## Quickstart (Desktop)
 
 ```bash
@@ -63,6 +70,13 @@ cd skills-sync
 ```bash
 cd platform
 cargo run -p skillssync-cli -- sync --trigger manual --json
+```
+
+### List subagents
+
+```bash
+cd platform
+cargo run -p skillssync-cli -- list-subagents --scope all --json
 ```
 
 ### Optional environment diagnostics

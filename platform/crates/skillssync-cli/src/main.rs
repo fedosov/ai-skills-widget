@@ -28,6 +28,12 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    ListSubagents {
+        #[arg(long, default_value = "all")]
+        scope: String,
+        #[arg(long)]
+        json: bool,
+    },
     Delete {
         #[arg(long = "skill-key")]
         skill_key: String,
@@ -73,12 +79,16 @@ fn main() -> Result<()> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&state)?);
             } else {
+                let skill_conflicts = state.summary.conflict_count;
+                let subagent_conflicts = state.subagent_summary.conflict_count;
                 println!(
-                    "sync={} global={} project={} conflicts={}",
+                    "sync={} skills(global={},project={}) subagents(global={},project={}) conflicts={}",
                     format!("{:?}", state.sync.status).to_lowercase(),
                     state.summary.global_count,
                     state.summary.project_count,
-                    state.summary.conflict_count
+                    state.subagent_summary.global_count,
+                    state.subagent_summary.project_count,
+                    skill_conflicts + subagent_conflicts
                 );
             }
         }
@@ -101,6 +111,22 @@ fn main() -> Result<()> {
                             "active"
                         },
                         skill.canonical_source_path
+                    );
+                }
+            }
+        }
+        Commands::ListSubagents { scope, json } => {
+            let scope_filter = scope
+                .parse::<ScopeFilter>()
+                .map_err(|_| anyhow!("unsupported scope: {scope} (all|global|project)"))?;
+            let subagents = engine.list_subagents(scope_filter);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&subagents)?);
+            } else {
+                for subagent in subagents {
+                    println!(
+                        "{}\t{}\t{}",
+                        subagent.subagent_key, subagent.scope, subagent.canonical_source_path
                     );
                 }
             }
@@ -143,11 +169,13 @@ fn main() -> Result<()> {
                 match watcher.recv_timeout(Duration::from_secs(2)) {
                     Some(Ok(_event)) => match engine.run_sync(SyncTrigger::AutoFilesystem) {
                         Ok(state) => {
+                            let skill_conflicts = state.summary.conflict_count;
+                            let subagent_conflicts = state.subagent_summary.conflict_count;
                             println!(
                                 "sync ok: global={} project={} conflicts={}",
                                 state.summary.global_count,
                                 state.summary.project_count,
-                                state.summary.conflict_count
+                                skill_conflicts + subagent_conflicts
                             );
                         }
                         Err(error) => {
@@ -171,6 +199,7 @@ fn main() -> Result<()> {
             let state = engine.load_state();
             println!("state_version={}", state.version);
             println!("skills={}", state.skills.len());
+            println!("subagents={}", state.subagents.len());
         }
     }
 

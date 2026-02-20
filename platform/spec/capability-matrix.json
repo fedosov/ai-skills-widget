@@ -4,6 +4,7 @@
     "features": [
       "sync",
       "list",
+      "list-subagents",
       "delete",
       "archive",
       "restore",

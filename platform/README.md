@@ -1,6 +1,6 @@
 # SkillsSync Platform Workspace
 
-This workspace contains the multiplatform refactor:
+This workspace contains the multiplatform sync engine for `skills` and `subagents`:
 
 - `crates/skillssync-core`: shared domain engine and file-sync use-cases
 - `crates/skillssync-cli`: `skillssync` CLI on top of `skillssync-core`
@@ -14,6 +14,7 @@ This workspace contains the multiplatform refactor:
 cd platform
 cargo test
 cargo run -p skillssync-cli -- sync --trigger manual --json
+cargo run -p skillssync-cli -- list-subagents --scope all --json
 ```
 
 ## Desktop

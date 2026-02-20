@@ -4,9 +4,12 @@ import {
   getStarredSkillIds,
   getState,
   getSkillDetails,
+  getSubagentDetails,
+  listSubagents,
   getPlatformContext,
   mutateSkill,
   openSkillPath,
+  openSubagentPath,
   renameSkill,
   runSync,
   setSkillStarred,
@@ -26,6 +29,13 @@ describe("tauriApi command payloads", () => {
     await getSkillDetails("alpha");
     expect(invoke).toHaveBeenCalledWith("get_skill_details", {
       skillKey: "alpha",
+    });
+  });
+
+  it("sends camelCase payload for get_subagent_details", async () => {
+    await getSubagentDetails("reviewer");
+    expect(invoke).toHaveBeenCalledWith("get_subagent_details", {
+      subagentId: "reviewer",
     });
   });
 
@@ -53,6 +63,14 @@ describe("tauriApi command payloads", () => {
     });
   });
 
+  it("sends target payload for open_subagent_path", async () => {
+    await openSubagentPath("reviewer", "folder");
+    expect(invoke).toHaveBeenCalledWith("open_subagent_path", {
+      subagentId: "reviewer",
+      target: "folder",
+    });
+  });
+
   it("runs sync with manual trigger", async () => {
     await runSync();
     expect(invoke).toHaveBeenCalledWith("run_sync", { trigger: "manual" });
@@ -61,6 +79,11 @@ describe("tauriApi command payloads", () => {
   it("loads state without args", async () => {
     await getState();
     expect(invoke).toHaveBeenCalledWith("get_state");
+  });
+
+  it("lists subagents with scope", async () => {
+    await listSubagents("all");
+    expect(invoke).toHaveBeenCalledWith("list_subagents", { scope: "all" });
   });
 
   it("loads platform context without args", async () => {

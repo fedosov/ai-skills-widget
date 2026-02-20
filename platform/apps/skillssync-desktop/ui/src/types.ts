@@ -19,6 +19,24 @@ export type SkillRecord = {
   skill_key: string;
 };
 
+export type SubagentRecord = {
+  id: string;
+  name: string;
+  description: string;
+  scope: string;
+  workspace: string | null;
+  canonical_source_path: string;
+  target_paths: string[];
+  exists: boolean;
+  is_symlink_canonical: boolean;
+  package_type: string;
+  subagent_key: string;
+  symlink_target: string;
+  model: string | null;
+  tools: string[];
+  codex_tools_ignored: boolean;
+};
+
 export type SyncSummary = {
   global_count: number;
   project_count: number;
@@ -31,10 +49,15 @@ export type SyncMetadata = {
 };
 
 export type SyncState = {
+  version?: number;
   generated_at: string;
   sync: SyncMetadata;
   summary: SyncSummary;
+  subagent_summary: SyncSummary;
   skills: SkillRecord[];
+  subagents: SubagentRecord[];
+  top_skills?: string[];
+  top_subagents?: string[];
 };
 
 export type SkillDetails = {
@@ -53,3 +76,30 @@ export type MutationCommand =
   | "restore_skill"
   | "delete_skill"
   | "make_global";
+
+export type SubagentTargetKind =
+  | "symlink"
+  | "regular_file"
+  | "missing"
+  | "other";
+
+export type SubagentTargetStatus = {
+  path: string;
+  exists: boolean;
+  is_symlink: boolean;
+  symlink_target: string | null;
+  points_to_canonical: boolean;
+  kind: SubagentTargetKind;
+};
+
+export type SubagentDetails = {
+  subagent: SubagentRecord;
+  main_file_path: string;
+  main_file_exists: boolean;
+  main_file_body_preview: string | null;
+  main_file_body_preview_truncated: boolean;
+  subagent_dir_tree_preview: string | null;
+  subagent_dir_tree_preview_truncated: boolean;
+  last_modified_unix_seconds: number | null;
+  target_statuses: SubagentTargetStatus[];
+};

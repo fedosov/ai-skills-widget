@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "generated_at": "2026-02-20T10:00:00Z",
   "sync": {
     "status": "ok",
@@ -11,6 +11,11 @@
   "summary": {
     "global_count": 1,
     "project_count": 1,
+    "conflict_count": 0
+  },
+  "subagent_summary": {
+    "global_count": 1,
+    "project_count": 0,
     "conflict_count": 0
   },
   "skills": [
@@ -37,7 +42,29 @@
       "archived_original_workspace": null
     }
   ],
-  "top_skills": [
-    "skill-abc123def456"
-  ]
+  "subagents": [
+    {
+      "id": "subagent-abc123def456",
+      "name": "reviewer",
+      "description": "Review code changes",
+      "scope": "global",
+      "workspace": null,
+      "canonical_source_path": "/Users/example/.agents/subagents/reviewer.md",
+      "target_paths": [
+        "/Users/example/.agents/subagents/reviewer.md",
+        "/Users/example/.claude/agents/reviewer.md",
+        "/Users/example/.cursor/agents/reviewer.md"
+      ],
+      "exists": true,
+      "is_symlink_canonical": false,
+      "package_type": "file",
+      "subagent_key": "reviewer",
+      "symlink_target": "/Users/example/.agents/subagents/reviewer.md",
+      "model": "gpt-5.3-codex",
+      "tools": ["Read", "Grep"],
+      "codex_tools_ignored": true
+    }
+  ],
+  "top_skills": ["skill-abc123def456"],
+  "top_subagents": ["subagent-abc123def456"]
 }

@@ -1,8 +1,9 @@
 use crate::codex_registry::CodexSkillsRegistryWriter;
+use crate::codex_subagent_registry::{CodexSubagentConfigEntry, CodexSubagentRegistryWriter};
 use crate::error::SyncEngineError;
 use crate::models::{
-    SkillLifecycleStatus, SkillRecord, SyncConflict, SyncHealthStatus, SyncMetadata, SyncState,
-    SyncSummary, SyncTrigger,
+    SkillLifecycleStatus, SkillRecord, SubagentRecord, SyncConflict, SyncConflictKind,
+    SyncHealthStatus, SyncMetadata, SyncState, SyncSummary, SyncTrigger,
 };
 use crate::paths::{home_dir, SyncPaths};
 use crate::settings::{AppUiState, SyncPreferencesStore};
@@ -94,10 +95,27 @@ struct SkillPackage {
     package_hash: String,
 }
 
+#[derive(Debug, Clone)]
+struct SubagentPackage {
+    source_root: PathBuf,
+    subagent_key: String,
+    name: String,
+    description: String,
+    model: Option<String>,
+    tools: Vec<String>,
+    body: String,
+    canonical_path: PathBuf,
+    package_type: String,
+    package_hash: String,
+}
+
 #[derive(Debug)]
 struct SyncCoreResult {
     entries: Vec<SkillRecord>,
-    conflict_count: usize,
+    subagent_entries: Vec<SubagentRecord>,
+    codex_subagent_entries: Vec<CodexSubagentConfigEntry>,
+    skill_conflict_count: usize,
+    subagent_conflict_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +225,22 @@ impl SyncEngine {
         items
     }
 
+    pub fn list_subagents(&self, scope: ScopeFilter) -> Vec<SubagentRecord> {
+        let state = self.store.load_state();
+        let mut items: Vec<SubagentRecord> = state
+            .subagents
+            .into_iter()
+            .filter(|item| match scope {
+                ScopeFilter::All => true,
+                ScopeFilter::Global => item.scope == "global",
+                ScopeFilter::Project => item.scope == "project",
+                ScopeFilter::Archived => false,
+            })
+            .collect();
+        items.sort_by(sort_subagent_entries);
+        items
+    }
+
     pub fn find_skill(&self, locator: &SkillLocator) -> Option<SkillRecord> {
         self.store.load_state().skills.into_iter().find(|skill| {
             skill.skill_key == locator.skill_key
@@ -215,6 +249,14 @@ impl SyncEngine {
                     .map(|status| skill.status == status)
                     .unwrap_or(true)
         })
+    }
+
+    pub fn find_subagent_by_id(&self, subagent_id: &str) -> Option<SubagentRecord> {
+        self.store
+            .load_state()
+            .subagents
+            .into_iter()
+            .find(|item| item.id == subagent_id)
     }
 
     pub fn run_sync(&self, _trigger: SyncTrigger) -> Result<SyncState, SyncEngineError> {
@@ -228,12 +270,19 @@ impl SyncEngine {
                 registry_writer
                     .write_managed_registry(&result.entries)
                     .map_err(|e| SyncEngineError::CodexRegistryWriteFailed(e.to_string()))?;
+                let subagent_registry_writer =
+                    CodexSubagentRegistryWriter::new(self.environment.home_directory.clone());
+                subagent_registry_writer
+                    .write_managed_registries(&result.codex_subagent_entries)
+                    .map_err(|e| SyncEngineError::CodexRegistryWriteFailed(e.to_string()))?;
 
                 let finished = Utc::now();
                 let state = self.make_state(
                     SyncHealthStatus::Ok,
                     result.entries,
-                    result.conflict_count,
+                    result.subagent_entries,
+                    result.skill_conflict_count,
+                    result.subagent_conflict_count,
                     started,
                     finished,
                     None,
@@ -242,9 +291,16 @@ impl SyncEngine {
                 Ok(state)
             }
             Err(error) => {
-                let conflict_count = match &error {
-                    SyncEngineError::Conflicts(count, _) => *count,
-                    _ => 0,
+                let (skill_conflict_count, subagent_conflict_count) = match &error {
+                    SyncEngineError::Conflicts(_, conflicts) => {
+                        conflicts.iter().fold((0usize, 0usize), |(skills, subagents), item| {
+                            match item.kind {
+                                SyncConflictKind::Skill => (skills + 1, subagents),
+                                SyncConflictKind::Subagent => (skills, subagents + 1),
+                            }
+                        })
+                    }
+                    _ => (0, 0),
                 };
                 let finished = Utc::now();
                 let failed = self.make_failed_state(
@@ -252,7 +308,8 @@ impl SyncEngine {
                     started,
                     finished,
                     error.to_string(),
-                    conflict_count,
+                    skill_conflict_count,
+                    subagent_conflict_count,
                 );
                 let _ = self.store.save_state(&failed);
                 Err(error)
@@ -546,6 +603,16 @@ impl SyncEngine {
             HashMap::new();
         let mut project_resolved_by_workspace: HashMap<PathBuf, BTreeMap<String, SkillPackage>> =
             HashMap::new();
+        let global_subagent_candidates = self.discover_global_subagents();
+        let (global_subagent_canonical, subagent_conflicts) =
+            self.resolve_subagent_scope_candidates(&global_subagent_candidates, "global", None);
+        conflicts.extend(subagent_conflicts);
+        let mut project_subagent_candidates_by_workspace: HashMap<PathBuf, Vec<SubagentPackage>> =
+            HashMap::new();
+        let mut project_subagent_resolved_by_workspace: HashMap<
+            PathBuf,
+            BTreeMap<String, SubagentPackage>,
+        > = HashMap::new();
 
         for workspace in &workspaces {
             let candidates = self.discover_project_packages(workspace);
@@ -554,6 +621,17 @@ impl SyncEngine {
             conflicts.extend(scope_conflicts);
             project_candidates_by_workspace.insert(workspace.clone(), candidates);
             project_resolved_by_workspace.insert(workspace.clone(), resolved);
+
+            let subagent_candidates = self.discover_project_subagents(workspace);
+            let (subagent_resolved, subagent_scope_conflicts) = self
+                .resolve_subagent_scope_candidates(
+                    &subagent_candidates,
+                    "project",
+                    Some(workspace),
+                );
+            conflicts.extend(subagent_scope_conflicts);
+            project_subagent_candidates_by_workspace.insert(workspace.clone(), subagent_candidates);
+            project_subagent_resolved_by_workspace.insert(workspace.clone(), subagent_resolved);
         }
 
         if !conflicts.is_empty() {
@@ -580,7 +658,11 @@ impl SyncEngine {
 
         let old_managed_links = self.load_managed_links_manifest();
         let mut new_managed_links: HashSet<String> = HashSet::new();
+        let old_subagent_managed_links = self.load_subagent_managed_links_manifest();
+        let mut new_subagent_managed_links: HashSet<String> = HashSet::new();
         let mut entries: Vec<SkillRecord> = Vec::new();
+        let mut subagent_entries: Vec<SubagentRecord> = Vec::new();
+        let mut codex_subagent_entries: Vec<CodexSubagentConfigEntry> = Vec::new();
 
         for (skill_key, package) in &global_canonical {
             let mut target_paths = Vec::new();
@@ -627,15 +709,85 @@ impl SyncEngine {
             }
         }
 
+        for (subagent_key, package) in &global_subagent_canonical {
+            let mut target_paths = Vec::new();
+            for target_root in self.global_subagent_targets() {
+                let target = target_root.join(format!("{subagent_key}.md"));
+                if standardized_path(&target) == standardized_path(&package.canonical_path) {
+                    target_paths.push(target.display().to_string());
+                    continue;
+                }
+                self.create_or_update_symlink(&target, &package.canonical_path)?;
+                new_subagent_managed_links.insert(standardized_path(&target));
+                target_paths.push(target.display().to_string());
+            }
+            subagent_entries.push(self.create_subagent_entry(
+                "global",
+                None,
+                subagent_key,
+                package,
+                target_paths,
+            ));
+            codex_subagent_entries.push(CodexSubagentConfigEntry {
+                scope: "global".to_string(),
+                workspace: None,
+                subagent_key: subagent_key.clone(),
+                description: package.description.clone(),
+                prompt: package.body.clone(),
+                model: package.model.clone(),
+            });
+        }
+
+        for workspace in &workspaces {
+            let Some(canonical) = project_subagent_resolved_by_workspace.get(workspace) else {
+                continue;
+            };
+            let target_roots = self.project_subagent_targets(workspace);
+            for (subagent_key, package) in canonical {
+                let mut target_paths = Vec::new();
+                for target_root in &target_roots {
+                    let target = target_root.join(format!("{subagent_key}.md"));
+                    if standardized_path(&target) == standardized_path(&package.canonical_path) {
+                        target_paths.push(target.display().to_string());
+                        continue;
+                    }
+                    self.create_or_update_symlink(&target, &package.canonical_path)?;
+                    new_subagent_managed_links.insert(standardized_path(&target));
+                    target_paths.push(target.display().to_string());
+                }
+                subagent_entries.push(self.create_subagent_entry(
+                    "project",
+                    Some(workspace.display().to_string()),
+                    subagent_key,
+                    package,
+                    target_paths,
+                ));
+                codex_subagent_entries.push(CodexSubagentConfigEntry {
+                    scope: "project".to_string(),
+                    workspace: Some(workspace.display().to_string()),
+                    subagent_key: subagent_key.clone(),
+                    description: package.description.clone(),
+                    prompt: package.body.clone(),
+                    model: package.model.clone(),
+                });
+            }
+        }
+
         self.cleanup_stale_links(&old_managed_links, &new_managed_links);
         self.save_managed_links_manifest(&new_managed_links)?;
+        self.cleanup_stale_links(&old_subagent_managed_links, &new_subagent_managed_links);
+        self.save_subagent_managed_links_manifest(&new_subagent_managed_links)?;
 
         entries.extend(self.load_archived_entries());
         entries.sort_by(sort_entries);
+        subagent_entries.sort_by(sort_subagent_entries);
 
         Ok(SyncCoreResult {
             entries,
-            conflict_count: 0,
+            subagent_entries,
+            codex_subagent_entries,
+            skill_conflict_count: 0,
+            subagent_conflict_count: 0,
         })
     }
 
@@ -668,20 +820,57 @@ impl SyncEngine {
         }
     }
 
+    fn create_subagent_entry(
+        &self,
+        scope: &str,
+        workspace: Option<String>,
+        subagent_key: &str,
+        package: &SubagentPackage,
+        mut target_paths: Vec<String>,
+    ) -> SubagentRecord {
+        target_paths.sort();
+        SubagentRecord {
+            id: skill_entry_id(scope, workspace.as_deref(), subagent_key),
+            name: package.name.clone(),
+            description: package.description.clone(),
+            scope: scope.to_string(),
+            workspace,
+            canonical_source_path: package.canonical_path.display().to_string(),
+            target_paths,
+            exists: path_exists_or_symlink(&package.canonical_path),
+            is_symlink_canonical: is_symlink(&package.canonical_path),
+            package_type: package.package_type.clone(),
+            subagent_key: subagent_key.to_string(),
+            symlink_target: package.canonical_path.display().to_string(),
+            model: package.model.clone(),
+            tools: package.tools.clone(),
+            codex_tools_ignored: !package.tools.is_empty(),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn make_state(
         &self,
         status: SyncHealthStatus,
         mut entries: Vec<SkillRecord>,
-        conflict_count: usize,
+        mut subagent_entries: Vec<SubagentRecord>,
+        skill_conflict_count: usize,
+        subagent_conflict_count: usize,
         started: chrono::DateTime<Utc>,
         finished: chrono::DateTime<Utc>,
         error: Option<String>,
     ) -> SyncState {
         entries.sort_by(sort_entries);
+        subagent_entries.sort_by(sort_subagent_entries);
         let top_skill_ids = entries.iter().take(6).map(|item| item.id.clone()).collect();
+        let top_subagent_ids = subagent_entries
+            .iter()
+            .take(6)
+            .map(|item| item.id.clone())
+            .collect();
 
         SyncState {
-            version: 1,
+            version: 2,
             generated_at: iso8601(finished),
             sync: SyncMetadata {
                 status,
@@ -705,10 +894,23 @@ impl SyncEngine {
                         entry.scope == "project" && entry.status == SkillLifecycleStatus::Active
                     })
                     .count(),
-                conflict_count,
+                conflict_count: skill_conflict_count,
+            },
+            subagent_summary: SyncSummary {
+                global_count: subagent_entries
+                    .iter()
+                    .filter(|entry| entry.scope == "global")
+                    .count(),
+                project_count: subagent_entries
+                    .iter()
+                    .filter(|entry| entry.scope == "project")
+                    .count(),
+                conflict_count: subagent_conflict_count,
             },
             skills: entries,
+            subagents: subagent_entries,
             top_skills: top_skill_ids,
+            top_subagents: top_subagent_ids,
         }
     }
 
@@ -718,10 +920,11 @@ impl SyncEngine {
         started: chrono::DateTime<Utc>,
         finished: chrono::DateTime<Utc>,
         error: String,
-        conflict_count: usize,
+        skill_conflict_count: usize,
+        subagent_conflict_count: usize,
     ) -> SyncState {
         SyncState {
-            version: 1,
+            version: 2,
             generated_at: iso8601(finished),
             sync: SyncMetadata {
                 status: SyncHealthStatus::Failed,
@@ -735,10 +938,17 @@ impl SyncEngine {
             summary: SyncSummary {
                 global_count: previous.summary.global_count,
                 project_count: previous.summary.project_count,
-                conflict_count,
+                conflict_count: skill_conflict_count,
+            },
+            subagent_summary: SyncSummary {
+                global_count: previous.subagent_summary.global_count,
+                project_count: previous.subagent_summary.project_count,
+                conflict_count: subagent_conflict_count,
             },
             skills: previous.skills,
+            subagents: previous.subagents,
             top_skills: previous.top_skills,
+            top_subagents: previous.top_subagents,
         }
     }
 
@@ -755,6 +965,22 @@ impl SyncEngine {
         result.extend(self.discover_dir_packages(&workspace.join(".claude").join("skills")));
         result.extend(self.discover_dir_packages(&workspace.join(".agents").join("skills")));
         result.extend(self.discover_dir_packages(&workspace.join(".codex").join("skills")));
+        result
+    }
+
+    fn discover_global_subagents(&self) -> Vec<SubagentPackage> {
+        let mut result = Vec::new();
+        result.extend(self.discover_subagent_files(&self.shared_subagents_root()));
+        result.extend(self.discover_subagent_files(&self.claude_agents_root()));
+        result.extend(self.discover_subagent_files(&self.cursor_agents_root()));
+        result
+    }
+
+    fn discover_project_subagents(&self, workspace: &Path) -> Vec<SubagentPackage> {
+        let mut result = Vec::new();
+        result.extend(self.discover_subagent_files(&workspace.join(".agents").join("subagents")));
+        result.extend(self.discover_subagent_files(&workspace.join(".claude").join("agents")));
+        result.extend(self.discover_subagent_files(&workspace.join(".cursor").join("agents")));
         result
     }
 
@@ -825,6 +1051,60 @@ impl SyncEngine {
         packages
     }
 
+    fn discover_subagent_files(&self, root: &Path) -> Vec<SubagentPackage> {
+        if !root.exists() {
+            return Vec::new();
+        }
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut packages = Vec::new();
+        for entry in WalkDir::new(root)
+            .follow_links(false)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let path = entry.path().to_path_buf();
+            if path.extension().and_then(OsStr::to_str) != Some("md") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
+                continue;
+            };
+            let key = stem.trim().to_string();
+            if key.is_empty() || self.is_protected_skill_key(&key) || seen.contains(&key) {
+                continue;
+            }
+            let Ok(raw) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Some(parsed) = parse_subagent_markdown(&raw) else {
+                continue;
+            };
+            if parsed.name != key {
+                continue;
+            }
+            if seen.insert(key.clone()) {
+                let package_hash = sha256_bytes(raw.as_bytes());
+                packages.push(SubagentPackage {
+                    source_root: root.to_path_buf(),
+                    subagent_key: key.clone(),
+                    name: parsed.name,
+                    description: parsed.description,
+                    model: parsed.model,
+                    tools: parsed.tools,
+                    body: parsed.body,
+                    canonical_path: path,
+                    package_type: String::from("file"),
+                    package_hash,
+                });
+            }
+        }
+        packages
+    }
+
     fn resolve_scope_candidates(
         &self,
         packages: &[SkillPackage],
@@ -849,6 +1129,7 @@ impl SyncEngine {
                 .collect();
             if hashes.len() > 1 {
                 conflicts.push(SyncConflict {
+                    kind: SyncConflictKind::Skill,
                     scope: scope.to_string(),
                     workspace: workspace.map(|item| item.display().to_string()),
                     skill_key,
@@ -869,6 +1150,51 @@ impl SyncEngine {
             }
         }
 
+        (canonical, conflicts)
+    }
+
+    fn resolve_subagent_scope_candidates(
+        &self,
+        packages: &[SubagentPackage],
+        scope: &str,
+        workspace: Option<&Path>,
+    ) -> (BTreeMap<String, SubagentPackage>, Vec<SyncConflict>) {
+        let mut by_key: HashMap<String, Vec<SubagentPackage>> = HashMap::new();
+        for package in packages {
+            by_key
+                .entry(package.subagent_key.clone())
+                .or_default()
+                .push(package.clone());
+        }
+
+        let mut canonical = BTreeMap::new();
+        let mut conflicts = Vec::new();
+        for (subagent_key, candidates) in by_key {
+            let hashes: HashSet<String> = candidates
+                .iter()
+                .map(|item| item.package_hash.clone())
+                .collect();
+            if hashes.len() > 1 {
+                conflicts.push(SyncConflict {
+                    kind: SyncConflictKind::Subagent,
+                    scope: scope.to_string(),
+                    workspace: workspace.map(|item| item.display().to_string()),
+                    skill_key: subagent_key,
+                });
+                continue;
+            }
+
+            let selected = candidates.into_iter().min_by(|lhs, rhs| {
+                let lp = self.subagent_source_priority(scope, lhs, workspace);
+                let rp = self.subagent_source_priority(scope, rhs, workspace);
+                lp.cmp(&rp)
+                    .then_with(|| lhs.source_root.cmp(&rhs.source_root))
+                    .then_with(|| lhs.canonical_path.cmp(&rhs.canonical_path))
+            });
+            if let Some(package) = selected {
+                canonical.insert(package.subagent_key.clone(), package);
+            }
+        }
         (canonical, conflicts)
     }
 
@@ -912,6 +1238,43 @@ impl SyncEngine {
         usize::MAX
     }
 
+    fn subagent_source_priority(
+        &self,
+        scope: &str,
+        package: &SubagentPackage,
+        workspace: Option<&Path>,
+    ) -> usize {
+        if scope == "global" {
+            let roots = [
+                self.shared_subagents_root(),
+                self.claude_agents_root(),
+                self.cursor_agents_root(),
+            ];
+            for (idx, root) in roots.iter().enumerate() {
+                if standardized_path(root) == standardized_path(&package.source_root) {
+                    return idx;
+                }
+            }
+            return usize::MAX;
+        }
+        let Some(workspace) = workspace else {
+            return usize::MAX;
+        };
+        let shared = workspace.join(".agents").join("subagents");
+        let claude = workspace.join(".claude").join("agents");
+        let cursor = workspace.join(".cursor").join("agents");
+        if standardized_path(&package.source_root) == standardized_path(&shared) {
+            return 0;
+        }
+        if standardized_path(&package.source_root) == standardized_path(&claude) {
+            return 1;
+        }
+        if standardized_path(&package.source_root) == standardized_path(&cursor) {
+            return 2;
+        }
+        usize::MAX
+    }
+
     fn migrate_scope_candidates_to_claude(
         &self,
         candidates: &[SkillPackage],
@@ -946,6 +1309,7 @@ impl SyncEngine {
                 .collect();
             if hashes.len() > 1 {
                 return Err(SyncEngineError::conflicts(vec![SyncConflict {
+                    kind: SyncConflictKind::Skill,
                     scope: scope.to_string(),
                     workspace: workspace.map(|item| item.display().to_string()),
                     skill_key,
@@ -1032,7 +1396,7 @@ impl SyncEngine {
         if let Ok(entries) = fs::read_dir(&self.environment.dev_root) {
             for entry in entries.filter_map(Result::ok) {
                 let repo = entry.path();
-                if self.has_workspace_skills(&repo) {
+                if self.has_workspace_sync_roots(&repo) {
                     candidates.push(repo);
                 }
             }
@@ -1043,7 +1407,7 @@ impl SyncEngine {
                 if let Ok(repos) = fs::read_dir(owner.path()) {
                     for repo in repos.filter_map(Result::ok) {
                         let path = repo.path();
-                        if self.has_workspace_skills(&path) {
+                        if self.has_workspace_sync_roots(&path) {
                             candidates.push(path);
                         }
                     }
@@ -1065,10 +1429,13 @@ impl SyncEngine {
         deduped
     }
 
-    fn has_workspace_skills(&self, repo: &Path) -> bool {
+    fn has_workspace_sync_roots(&self, repo: &Path) -> bool {
         repo.join(".claude").join("skills").exists()
             || repo.join(".agents").join("skills").exists()
             || repo.join(".codex").join("skills").exists()
+            || repo.join(".claude").join("agents").exists()
+            || repo.join(".cursor").join("agents").exists()
+            || repo.join(".agents").join("subagents").exists()
     }
 
     fn custom_workspace_discovery_roots(&self) -> Vec<PathBuf> {
@@ -1169,7 +1536,7 @@ impl SyncEngine {
         }
 
         let mut result = Vec::new();
-        if self.has_workspace_skills(root) {
+        if self.has_workspace_sync_roots(root) {
             result.push(root.to_path_buf());
         }
 
@@ -1231,6 +1598,9 @@ impl SyncEngine {
             self.claude_skills_root(),
             self.agents_skills_root(),
             self.codex_skills_root(),
+            self.shared_subagents_root(),
+            self.claude_agents_root(),
+            self.cursor_agents_root(),
             self.archives_root(),
             self.runtime_skills_root(),
             self.runtime_prompts_root(),
@@ -1277,6 +1647,26 @@ impl SyncEngine {
         payload.managed_links.into_iter().collect()
     }
 
+    fn load_subagent_managed_links_manifest(&self) -> HashSet<String> {
+        #[derive(Debug, Deserialize)]
+        struct Manifest {
+            #[serde(default, rename = "managed_links")]
+            managed_links: Vec<String>,
+        }
+
+        let manifest = self
+            .environment
+            .runtime_directory
+            .join(".subagent-sync-manifest.json");
+        let Ok(data) = fs::read(&manifest) else {
+            return HashSet::new();
+        };
+        let Ok(payload) = serde_json::from_slice::<Manifest>(&data) else {
+            return HashSet::new();
+        };
+        payload.managed_links.into_iter().collect()
+    }
+
     fn save_managed_links_manifest(
         &self,
         managed_links: &HashSet<String>,
@@ -1305,6 +1695,38 @@ impl SyncEngine {
             },
         };
 
+        let mut data = serde_json::to_vec_pretty(&payload)?;
+        data.push(b'\n');
+        fs::write(&path, data).map_err(|e| SyncEngineError::io(&path, e))
+    }
+
+    fn save_subagent_managed_links_manifest(
+        &self,
+        managed_links: &HashSet<String>,
+    ) -> Result<(), SyncEngineError> {
+        #[derive(Debug, Serialize)]
+        struct Manifest<'a> {
+            version: u32,
+            #[serde(rename = "generated_at")]
+            generated_at: &'a str,
+            #[serde(rename = "managed_links")]
+            managed_links: Vec<String>,
+        }
+
+        let path = self
+            .environment
+            .runtime_directory
+            .join(".subagent-sync-manifest.json");
+        let generated_at = iso8601_now();
+        let payload = Manifest {
+            version: 1,
+            generated_at: &generated_at,
+            managed_links: {
+                let mut links: Vec<String> = managed_links.iter().cloned().collect();
+                links.sort();
+                links
+            },
+        };
         let mut data = serde_json::to_vec_pretty(&payload)?;
         data.push(b'\n');
         fs::write(&path, data).map_err(|e| SyncEngineError::io(&path, e))
@@ -1496,6 +1918,27 @@ impl SyncEngine {
             .join("skills")
     }
 
+    fn shared_subagents_root(&self) -> PathBuf {
+        self.environment
+            .home_directory
+            .join(".agents")
+            .join("subagents")
+    }
+
+    fn claude_agents_root(&self) -> PathBuf {
+        self.environment
+            .home_directory
+            .join(".claude")
+            .join("agents")
+    }
+
+    fn cursor_agents_root(&self) -> PathBuf {
+        self.environment
+            .home_directory
+            .join(".cursor")
+            .join("agents")
+    }
+
     fn archives_root(&self) -> PathBuf {
         self.environment.runtime_directory.join("archives")
     }
@@ -1528,11 +1971,27 @@ impl SyncEngine {
         ]
     }
 
+    fn global_subagent_targets(&self) -> Vec<PathBuf> {
+        vec![
+            self.shared_subagents_root(),
+            self.claude_agents_root(),
+            self.cursor_agents_root(),
+        ]
+    }
+
     fn project_targets(&self, workspace: &Path) -> Vec<PathBuf> {
         vec![
             workspace.join(".claude").join("skills"),
             workspace.join(".agents").join("skills"),
             workspace.join(".codex").join("skills"),
+        ]
+    }
+
+    fn project_subagent_targets(&self, workspace: &Path) -> Vec<PathBuf> {
+        vec![
+            workspace.join(".agents").join("subagents"),
+            workspace.join(".claude").join("agents"),
+            workspace.join(".cursor").join("agents"),
         ]
     }
 }
@@ -1603,6 +2062,17 @@ fn sort_entries(lhs: &SkillRecord, rhs: &SkillRecord) -> std::cmp::Ordering {
     lhs.status
         .cmp(&rhs.status)
         .then_with(|| lhs.scope.cmp(&rhs.scope))
+        .then_with(|| {
+            lhs.name
+                .to_ascii_lowercase()
+                .cmp(&rhs.name.to_ascii_lowercase())
+        })
+        .then_with(|| lhs.workspace.cmp(&rhs.workspace))
+}
+
+fn sort_subagent_entries(lhs: &SubagentRecord, rhs: &SubagentRecord) -> std::cmp::Ordering {
+    lhs.scope
+        .cmp(&rhs.scope)
         .then_with(|| {
             lhs.name
                 .to_ascii_lowercase()
@@ -1727,6 +2197,98 @@ fn hash_directory(directory: &Path) -> Option<String> {
     }
 
     Some(hex_encode(&digest.finalize()))
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(bytes);
+    hex_encode(&digest.finalize())
+}
+
+#[derive(Debug)]
+struct ParsedSubagent {
+    name: String,
+    description: String,
+    model: Option<String>,
+    tools: Vec<String>,
+    body: String,
+}
+
+fn parse_subagent_markdown(raw: &str) -> Option<ParsedSubagent> {
+    let normalized = raw.replace("\r\n", "\n");
+    let rest = normalized.strip_prefix("---\n")?;
+    let fm_end = rest.find("\n---")?;
+    let frontmatter = &rest[..fm_end];
+    let body = rest[(fm_end + 4)..].trim().to_string();
+    let mut name = None;
+    let mut description = None;
+    let mut model = None;
+    let mut tools: Vec<String> = Vec::new();
+
+    for line in frontmatter.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+        match key {
+            "name" => name = Some(value),
+            "description" => description = Some(value),
+            "model" => model = Some(value),
+            "tools" => {
+                let value = value.trim();
+                if value.starts_with('[') && value.ends_with(']') {
+                    let inner = &value[1..value.len().saturating_sub(1)];
+                    for item in inner.split(',') {
+                        let token = item.trim().trim_matches('"').trim_matches('\'');
+                        if !token.is_empty() {
+                            tools.push(token.to_string());
+                        }
+                    }
+                } else if !value.is_empty() {
+                    for item in value.split(',') {
+                        let token = item.trim().trim_matches('"').trim_matches('\'');
+                        if !token.is_empty() {
+                            tools.push(token.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let name = name?;
+    let description = description?;
+    if !is_valid_subagent_key(&name) {
+        return None;
+    }
+    Some(ParsedSubagent {
+        name,
+        description,
+        model: model.filter(|item| !item.trim().is_empty()),
+        tools,
+        body,
+    })
+}
+
+fn is_valid_subagent_key(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_lowercase() || first.is_ascii_digit()) {
+        return false;
+    }
+    chars.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_')
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

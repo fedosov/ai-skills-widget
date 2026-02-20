@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   MutationCommand,
   PlatformContext,
+  SubagentDetails,
+  SubagentRecord,
   SkillDetails,
   SyncState,
 } from "./types";
@@ -32,6 +34,16 @@ export async function getSkillDetails(skillKey: string): Promise<SkillDetails> {
   return invoke<SkillDetails>("get_skill_details", { skillKey });
 }
 
+export async function getSubagentDetails(
+  subagentId: string,
+): Promise<SubagentDetails> {
+  return invoke<SubagentDetails>("get_subagent_details", { subagentId });
+}
+
+export async function listSubagents(scope?: string): Promise<SubagentRecord[]> {
+  return invoke<SubagentRecord[]>("list_subagents", { scope });
+}
+
 export async function mutateSkill(
   command: MutationCommand,
   skillKey: string,
@@ -58,6 +70,16 @@ export async function openSkillPath(
 ): Promise<void> {
   return invoke<void>("open_skill_path", {
     skillKey,
+    target,
+  });
+}
+
+export async function openSubagentPath(
+  subagentId: string,
+  target: "folder" | "file",
+): Promise<void> {
+  return invoke<void>("open_subagent_path", {
+    subagentId,
     target,
   });
 }

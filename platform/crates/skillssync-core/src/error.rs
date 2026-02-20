@@ -4,7 +4,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SyncEngineError {
-    #[error("Detected {0} skill conflict(s)")]
+    #[error("Detected {0} conflict(s)")]
     Conflicts(usize, Vec<SyncConflict>),
 
     #[error("I/O error at {path}: {source}")]
