@@ -54,6 +54,14 @@ struct SkillValidator {
         let path: String
         let line: Int
     }
+    private struct CandidateHit: Hashable {
+        let candidate: String
+        let line: Int
+    }
+    private struct CodeContext: Hashable {
+        let text: String
+        let line: Int
+    }
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -230,34 +238,22 @@ struct SkillValidator {
     }
 
     private func brokenLocalReferences(in text: String, root: URL) -> [BrokenReferenceHit] {
-        let patterns: [(String, Int)] = [
-            ("`((?:resources|references|scripts|assets)/[^`]+)`", 1),
-            ("\\[[^\\]]+\\]\\(([^)]+)\\)", 1),
-            ("\\bopen\\s+([A-Za-z0-9_./-]+)", 1)
-        ]
-
         let lines = text.components(separatedBy: .newlines)
         var missingByPath: [String: Int] = [:]
 
-        for (index, lineText) in lines.enumerated() {
-            for (pattern, group) in patterns {
-                let regex = try? NSRegularExpression(pattern: pattern)
-                let range = NSRange(lineText.startIndex..<lineText.endIndex, in: lineText)
-                regex?.enumerateMatches(in: lineText, range: range) { match, _, _ in
-                    guard let match else { return }
-                    guard let captureRange = Range(match.range(at: group), in: lineText) else { return }
-                    let candidate = String(lineText[captureRange])
-                    guard let normalized = normalizeRelativePath(candidate) else {
-                        return
-                    }
-                    let fullPath = root.appendingPathComponent(normalized).path
-                    if !fileManager.fileExists(atPath: fullPath) {
-                        let lineNumber = index + 1
-                        let current = missingByPath[normalized]
-                        if current == nil || lineNumber < current! {
-                            missingByPath[normalized] = lineNumber
-                        }
-                    }
+        let allCandidates = extractMarkdownLinks(from: lines)
+            + extractBacktickPaths(from: lines)
+            + extractReferencesFromCodeContext(extractCodeContexts(from: lines))
+
+        for hit in allCandidates {
+            guard let normalized = normalizeRelativePath(hit.candidate) else {
+                continue
+            }
+            let fullPath = root.appendingPathComponent(normalized).path
+            if !fileManager.fileExists(atPath: fullPath) {
+                let current = missingByPath[normalized]
+                if current == nil || hit.line < current! {
+                    missingByPath[normalized] = hit.line
                 }
             }
         }
@@ -267,10 +263,123 @@ struct SkillValidator {
             .sorted { lhs, rhs in lhs.path < rhs.path }
     }
 
+    private func extractMarkdownLinks(from lines: [String]) -> [CandidateHit] {
+        extractCandidates(
+            from: lines,
+            pattern: "\\[[^\\]]+\\]\\(([^)]+)\\)",
+            group: 1
+        )
+    }
+
+    private func extractBacktickPaths(from lines: [String]) -> [CandidateHit] {
+        extractCandidates(
+            from: lines,
+            pattern: "`((?:resources|references|scripts|assets)/[^`]+)`",
+            group: 1
+        )
+    }
+
+    private func extractCodeContexts(from lines: [String]) -> [CodeContext] {
+        var contexts: [CodeContext] = []
+        var inFence = false
+        var fenceMarker: Character?
+
+        for (index, lineText) in lines.enumerated() {
+            let line = index + 1
+            let trimmed = lineText.trimmingCharacters(in: .whitespaces)
+
+            if let marker = fenceStartMarker(for: trimmed) {
+                if !inFence {
+                    inFence = true
+                    fenceMarker = marker
+                } else if fenceMarker == marker {
+                    inFence = false
+                    fenceMarker = nil
+                }
+                continue
+            }
+
+            if inFence {
+                contexts.append(CodeContext(text: lineText, line: line))
+                continue
+            }
+
+            let inlineRegex = try? NSRegularExpression(pattern: "`([^`]+)`")
+            let range = NSRange(lineText.startIndex..<lineText.endIndex, in: lineText)
+            inlineRegex?.enumerateMatches(in: lineText, range: range) { match, _, _ in
+                guard let match else { return }
+                guard let captureRange = Range(match.range(at: 1), in: lineText) else { return }
+                let snippet = String(lineText[captureRange])
+                contexts.append(CodeContext(text: snippet, line: line))
+            }
+        }
+
+        return contexts
+    }
+
+    private func extractReferencesFromCodeContext(_ contexts: [CodeContext]) -> [CandidateHit] {
+        let regex = try? NSRegularExpression(pattern: "\\bopen\\s+([A-Za-z0-9_./-]+)")
+        var hits: [CandidateHit] = []
+
+        for context in contexts {
+            let range = NSRange(context.text.startIndex..<context.text.endIndex, in: context.text)
+            regex?.enumerateMatches(in: context.text, range: range) { match, _, _ in
+                guard let match else { return }
+                guard let captureRange = Range(match.range(at: 1), in: context.text) else { return }
+                let candidate = String(context.text[captureRange])
+                guard isPathLikeCandidate(candidate) else {
+                    return
+                }
+                hits.append(CandidateHit(candidate: candidate, line: context.line))
+            }
+        }
+
+        return hits
+    }
+
+    private func extractCandidates(from lines: [String], pattern: String, group: Int) -> [CandidateHit] {
+        let regex = try? NSRegularExpression(pattern: pattern)
+        var hits: [CandidateHit] = []
+
+        for (index, lineText) in lines.enumerated() {
+            let line = index + 1
+            let range = NSRange(lineText.startIndex..<lineText.endIndex, in: lineText)
+            regex?.enumerateMatches(in: lineText, range: range) { match, _, _ in
+                guard let match else { return }
+                guard let captureRange = Range(match.range(at: group), in: lineText) else { return }
+                hits.append(CandidateHit(candidate: String(lineText[captureRange]), line: line))
+            }
+        }
+
+        return hits
+    }
+
+    private func fenceStartMarker(for trimmedLine: String) -> Character? {
+        guard let first = trimmedLine.first, first == "`" || first == "~" else {
+            return nil
+        }
+        let count = trimmedLine.prefix { $0 == first }.count
+        return count >= 3 ? first : nil
+    }
+
+    private func isPathLikeCandidate(_ candidate: String) -> Bool {
+        if candidate.hasPrefix("./") || candidate.hasPrefix("../") {
+            return true
+        }
+        if candidate.contains("/") {
+            return true
+        }
+        let extRegex = try? NSRegularExpression(pattern: "\\.[A-Za-z0-9]+$")
+        let range = NSRange(candidate.startIndex..<candidate.endIndex, in: candidate)
+        return extRegex?.firstMatch(in: candidate, range: range) != nil
+    }
+
     private func normalizeRelativePath(_ value: String) -> String? {
         var candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
         candidate = candidate.trimmingCharacters(in: CharacterSet(charactersIn: "\"'`<>"))
-        candidate = candidate.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:"))
+        while let last = candidate.last, ".,;:".contains(last) {
+            candidate.removeLast()
+        }
         guard !candidate.isEmpty else { return nil }
         guard !candidate.hasPrefix("/") else { return nil }
         guard !candidate.contains("://") else { return nil }

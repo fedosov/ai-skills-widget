@@ -359,6 +359,63 @@ final class SkillsSyncSharedTests: XCTestCase {
         XCTAssertTrue(result.issues.contains(where: { $0.code == "skill_md_is_symlink" }))
     }
 
+    func testSkillValidatorDoesNotTreatOpenWordInProseAsReference() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-open-prose", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Find Skills
+        ---
+
+        # Find Skills
+
+        This skill helps you discover and install skills from the open agent skills ecosystem.
+        Another prose line about open agent workflows.
+        """)
+
+        let result = validator.validate(skill: makeSkill(id: "sv10", name: "open-prose", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertFalse(result.issues.contains(where: { $0.code == "broken_reference" && $0.message.contains("agent") }))
+    }
+
+    func testSkillValidatorDetectsOpenPathInInlineCodeContext() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-open-inline", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Inline Open
+        ---
+
+        # Inline Open
+
+        Run `open resources/missing.md` to inspect file.
+        """)
+
+        let result = validator.validate(skill: makeSkill(id: "sv11", name: "open-inline", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "broken_reference" && $0.message.contains("resources/missing.md") }))
+    }
+
+    func testSkillValidatorDetectsOpenPathInFencedCodeContext() throws {
+        let validator = SkillValidator()
+        let skillDir = tempDir.appendingPathComponent("validator-open-fenced", isDirectory: true)
+        try writeFile(skillDir.appendingPathComponent("SKILL.md"), contents: """
+        ---
+        title: Fenced Open
+        ---
+
+        # Fenced Open
+
+        ```bash
+        open ./scripts/missing.sh
+        ```
+        """)
+
+        let result = validator.validate(skill: makeSkill(id: "sv12", name: "open-fenced", scope: "global", sourcePath: skillDir.path))
+
+        XCTAssertTrue(result.issues.contains(where: { $0.code == "broken_reference" && $0.message.contains("scripts/missing.sh") }))
+    }
+
     func testRepairPromptBuilderIncludesSkillIdentityAndIssue() {
         let skill = makeSkill(
             id: "sv8",
