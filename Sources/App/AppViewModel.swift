@@ -78,14 +78,19 @@ final class AppViewModel: ObservableObject {
     private let store: SyncStateStore
     private let preferencesStore: SyncPreferencesStore
     private let makeEngine: () -> any SyncEngineControlling
+    private let makeAutoSyncCoordinator: (@escaping (AutoSyncEvent) -> Void) -> any AutoSyncCoordinating
     private let previewParser: SkillPreviewParser
     private let skillValidator: SkillValidator
-    private var timer: Timer?
+    private let autoSyncDebounceSeconds: TimeInterval
     private var isPreferencesLoaded = false
     private var currentSettings: SyncAppSettings = .default
     private var pendingUIPreferencesSave: DispatchWorkItem?
+    private var pendingAutoSyncWorkItem: DispatchWorkItem?
     private var previewCache: [String: CachedSkillPreview] = [:]
     private var validationCache: [String: CachedSkillValidation] = [:]
+    private var autoSyncCoordinator: (any AutoSyncCoordinating)?
+    private var isSyncInFlight = false
+    private var hasPendingAutoSync = false
 
     var selectedSkills: [SkillRecord] {
         state.skills.filter { selectedSkillIDs.contains($0.id) }
@@ -102,14 +107,20 @@ final class AppViewModel: ObservableObject {
         store: SyncStateStore = SyncStateStore(),
         preferencesStore: SyncPreferencesStore = SyncPreferencesStore(),
         makeEngine: @escaping () -> any SyncEngineControlling = { SyncEngine() },
+        makeAutoSyncCoordinator: @escaping (@escaping (AutoSyncEvent) -> Void) -> any AutoSyncCoordinating = {
+            AutoSyncCoordinator(onEvent: $0)
+        },
         previewParser: SkillPreviewParser = SkillPreviewParser(),
-        skillValidator: SkillValidator = SkillValidator()
+        skillValidator: SkillValidator = SkillValidator(),
+        autoSyncDebounceSeconds: TimeInterval = 1.5
     ) {
         self.store = store
         self.preferencesStore = preferencesStore
         self.makeEngine = makeEngine
+        self.makeAutoSyncCoordinator = makeAutoSyncCoordinator
         self.previewParser = previewParser
         self.skillValidator = skillValidator
+        self.autoSyncDebounceSeconds = autoSyncDebounceSeconds
         let settings = preferencesStore.loadSettings()
         currentSettings = settings
         autoMigrateToCanonicalSource = settings.autoMigrateToCanonicalSource
@@ -233,19 +244,26 @@ final class AppViewModel: ObservableObject {
 
     func start() {
         load()
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        autoSyncCoordinator?.stop()
+        let coordinator = makeAutoSyncCoordinator { [weak self] event in
             Task { @MainActor in
-                self?.load()
+                self?.handleAutoSyncEvent(event)
             }
         }
+        autoSyncCoordinator = coordinator
+        coordinator.start()
+        scheduleAutoSync(reason: .appStarted)
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        autoSyncCoordinator?.stop()
+        autoSyncCoordinator = nil
         pendingUIPreferencesSave?.cancel()
         pendingUIPreferencesSave = nil
+        pendingAutoSyncWorkItem?.cancel()
+        pendingAutoSyncWorkItem = nil
+        hasPendingAutoSync = false
+        isSyncInFlight = false
     }
 
     func load() {
@@ -284,37 +302,6 @@ final class AppViewModel: ObservableObject {
     func pruneSelectionToCurrentSkills() {
         let validIDs = Set(state.skills.map(\.id))
         selectedSkillIDs = selectedSkillIDs.intersection(validIDs)
-    }
-
-    func refreshSources() {
-        load()
-        let sourceCount = state.skills.filter { $0.scope == "global" }.count
-        localBanner = InlineBannerPresentation(
-            title: "Sources refreshed",
-            message: "Loaded \(sourceCount) source skills.",
-            symbol: "arrow.clockwise.circle.fill",
-            role: .info,
-            recoveryActionTitle: nil
-        )
-    }
-
-    func syncNow() {
-        Task {
-            do {
-                let engine = makeEngine()
-                state = try await engine.runSync(trigger: .manual)
-                localBanner = InlineBannerPresentation(
-                    title: "Sync completed",
-                    message: "Skills were synchronized successfully.",
-                    symbol: "checkmark.circle.fill",
-                    role: .success,
-                    recoveryActionTitle: nil
-                )
-            } catch {
-                load()
-                alertMessage = error.localizedDescription
-            }
-        }
     }
 
     func open(skill: SkillRecord) {
@@ -613,6 +600,62 @@ final class AppViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
+    private func handleAutoSyncEvent(_ event: AutoSyncEvent) {
+        switch event {
+        case .skillsFilesystemChanged:
+            scheduleAutoSync(reason: .skillsFilesystemChanged)
+        case .workspaceWatchListChanged:
+            scheduleAutoSync(reason: .workspaceWatchListChanged)
+        case .runtimeStateChanged:
+            load()
+        }
+    }
+
+    private func scheduleAutoSync(reason: AutoSyncReason) {
+        pendingAutoSyncWorkItem?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                await self?.runAutoSyncIfNeeded()
+            }
+        }
+        pendingAutoSyncWorkItem = work
+
+        let delay: TimeInterval
+        switch reason {
+        case .appStarted:
+            delay = 0
+        case .skillsFilesystemChanged, .workspaceWatchListChanged:
+            delay = autoSyncDebounceSeconds
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func runAutoSyncIfNeeded() async {
+        if isSyncInFlight {
+            hasPendingAutoSync = true
+            return
+        }
+
+        isSyncInFlight = true
+        defer {
+            isSyncInFlight = false
+            if hasPendingAutoSync {
+                hasPendingAutoSync = false
+                scheduleAutoSync(reason: .skillsFilesystemChanged)
+            }
+        }
+
+        do {
+            let engine = makeEngine()
+            state = try await engine.runSync(trigger: .autoFilesystem)
+            autoSyncCoordinator?.refreshWatchedPaths()
+        } catch {
+            load()
+            alertMessage = error.localizedDescription
+        }
+    }
+
     private func saveUIStateNow(sidebarWidth: Double?) {
         guard isPreferencesLoaded else { return }
 
@@ -650,6 +693,12 @@ final class AppViewModel: ObservableObject {
         guard trimmed.hasPrefix("/") else { return nil }
         return URL(fileURLWithPath: trimmed, isDirectory: true).standardizedFileURL.path
     }
+}
+
+private enum AutoSyncReason {
+    case appStarted
+    case skillsFilesystemChanged
+    case workspaceWatchListChanged
 }
 
 private struct CachedSkillPreview {

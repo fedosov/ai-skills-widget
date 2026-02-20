@@ -47,13 +47,13 @@ final class SyncPresentationTests: XCTestCase {
     func testSyncFailureBannerIncludesRecoveryAndOptionalDetails() {
         let noDetails = InlineBannerPresentation.syncFailure(errorDetails: nil)
         XCTAssertEqual(noDetails.title, "Sync couldn't complete.")
-        XCTAssertEqual(noDetails.recoveryActionTitle, "Sync now")
+        XCTAssertNil(noDetails.recoveryActionTitle)
         XCTAssertEqual(noDetails.role, .error)
-        XCTAssertTrue(noDetails.message.contains("Try Sync now. If this persists, open the app for details."))
+        XCTAssertTrue(noDetails.message.contains("Automatic sync will retry. If this persists, open the app for details."))
 
         let withDetails = InlineBannerPresentation.syncFailure(errorDetails: "Connection timed out")
         XCTAssertTrue(withDetails.message.contains("Connection timed out"))
-        XCTAssertTrue(withDetails.message.contains("Try Sync now."))
+        XCTAssertTrue(withDetails.message.contains("Automatic sync will retry."))
     }
 
     @MainActor
@@ -625,6 +625,118 @@ final class SyncPresentationTests: XCTestCase {
         XCTAssertTrue(source.contains("Workspace search roots"))
         XCTAssertTrue(source.contains("Add Root"))
         XCTAssertTrue(source.contains("Remove Root"))
+        XCTAssertFalse(source.contains("Button(\"Refresh\")"))
+        XCTAssertFalse(source.contains("Button(\"Sync Now\")"))
+        XCTAssertFalse(source.contains("Run Sync Now to discover skills"))
+        XCTAssertFalse(source.contains("onSyncNow"))
+    }
+
+    @MainActor
+    func testStartRunsInitialAutoSyncAndStartsCoordinator() async {
+        let expected = Self.makeState(skills: [makeSkill(id: "g-1", name: "Auto", scope: "global")])
+        let engine = MockSyncEngine(
+            onRunSync: { trigger in
+                XCTAssertEqual(trigger, .autoFilesystem)
+                return expected
+            },
+            onDelete: { _ in .empty }
+        )
+        let coordinator = MockAutoSyncCoordinator()
+        let viewModel = AppViewModel(
+            makeEngine: { engine },
+            makeAutoSyncCoordinator: { callback in
+                coordinator.onEvent = callback
+                return coordinator
+            }
+        )
+
+        viewModel.start()
+        for _ in 0..<100 where viewModel.state.skills != expected.skills {
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(engine.runSyncTriggers, [.autoFilesystem])
+        XCTAssertEqual(viewModel.state.skills, expected.skills)
+        XCTAssertEqual(coordinator.startCalls, 1)
+    }
+
+    @MainActor
+    func testAutoSyncDebouncesFilesystemEvents() async {
+        let expected = Self.makeState(skills: [makeSkill(id: "g-1", name: "Auto", scope: "global")])
+        let engine = MockSyncEngine(
+            onRunSync: { _ in expected },
+            onDelete: { _ in .empty }
+        )
+        let coordinator = MockAutoSyncCoordinator()
+        let viewModel = AppViewModel(
+            makeEngine: { engine },
+            makeAutoSyncCoordinator: { callback in
+                coordinator.onEvent = callback
+                return coordinator
+            },
+            autoSyncDebounceSeconds: 0.03
+        )
+
+        viewModel.start()
+        coordinator.emit(.skillsFilesystemChanged)
+        coordinator.emit(.skillsFilesystemChanged)
+        coordinator.emit(.skillsFilesystemChanged)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(engine.runSyncTriggers.filter { $0 == .autoFilesystem }.count, 2)
+    }
+
+    @MainActor
+    func testAutoSyncQueuesOnePendingRunWhileInFlight() async {
+        let startSecondRun = expectation(description: "second sync started")
+        var invocationCount = 0
+        let engine = MockSyncEngine(
+            onRunSync: { _ in
+                invocationCount += 1
+                if invocationCount == 1 {
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                } else if invocationCount == 2 {
+                    startSecondRun.fulfill()
+                }
+                return .empty
+            },
+            onDelete: { _ in .empty }
+        )
+        let coordinator = MockAutoSyncCoordinator()
+        let viewModel = AppViewModel(
+            makeEngine: { engine },
+            makeAutoSyncCoordinator: { callback in
+                coordinator.onEvent = callback
+                return coordinator
+            },
+            autoSyncDebounceSeconds: 0.01
+        )
+
+        viewModel.start()
+        coordinator.emit(.skillsFilesystemChanged)
+        coordinator.emit(.skillsFilesystemChanged)
+        coordinator.emit(.skillsFilesystemChanged)
+        await fulfillment(of: [startSecondRun], timeout: 1.0)
+
+        XCTAssertEqual(engine.runSyncTriggers.filter { $0 == .autoFilesystem }.count, 2)
+    }
+
+    @MainActor
+    func testStopStopsAutoSyncCoordinator() {
+        let coordinator = MockAutoSyncCoordinator()
+        let viewModel = AppViewModel(
+            makeEngine: { MockSyncEngine(onDelete: { _ in .empty }) },
+            makeAutoSyncCoordinator: { callback in
+                coordinator.onEvent = callback
+                return coordinator
+            }
+        )
+
+        viewModel.start()
+        viewModel.stop()
+
+        XCTAssertEqual(coordinator.stopCalls, 1)
     }
 
     private func makeSkill(
@@ -678,22 +790,27 @@ private struct MockDeleteError: LocalizedError {
 }
 
 private final class MockSyncEngine: SyncEngineControlling {
+    private let onRunSync: (SyncTrigger) async throws -> SyncState
     private let onDelete: (SkillRecord) async throws -> SyncState
     private let onMakeGlobal: (SkillRecord) async throws -> SyncState
     private let onRename: (SkillRecord, String) async throws -> SyncState
+    private(set) var runSyncTriggers: [SyncTrigger] = []
 
     init(
+        onRunSync: @escaping (SyncTrigger) async throws -> SyncState = { _ in .empty },
         onDelete: @escaping (SkillRecord) async throws -> SyncState,
         onMakeGlobal: @escaping (SkillRecord) async throws -> SyncState = { _ in .empty },
         onRename: @escaping (SkillRecord, String) async throws -> SyncState = { _, _ in .empty }
     ) {
+        self.onRunSync = onRunSync
         self.onDelete = onDelete
         self.onMakeGlobal = onMakeGlobal
         self.onRename = onRename
     }
 
     func runSync(trigger: SyncTrigger) async throws -> SyncState {
-        .empty
+        runSyncTriggers.append(trigger)
+        return try await onRunSync(trigger)
     }
 
     func openInZed(skill: SkillRecord) throws { }
@@ -710,5 +827,28 @@ private final class MockSyncEngine: SyncEngineControlling {
 
     func renameSkill(skill: SkillRecord, newTitle: String) async throws -> SyncState {
         try await onRename(skill, newTitle)
+    }
+}
+
+private final class MockAutoSyncCoordinator: AutoSyncCoordinating {
+    var onEvent: ((AutoSyncEvent) -> Void)?
+    private(set) var startCalls = 0
+    private(set) var stopCalls = 0
+    private(set) var refreshCalls = 0
+
+    func start() {
+        startCalls += 1
+    }
+
+    func stop() {
+        stopCalls += 1
+    }
+
+    func refreshWatchedPaths() {
+        refreshCalls += 1
+    }
+
+    func emit(_ event: AutoSyncEvent) {
+        onEvent?(event)
     }
 }

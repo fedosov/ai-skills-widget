@@ -87,17 +87,8 @@ private struct ContentView: View {
                     autoMigrateToCanonicalSource: $viewModel.autoMigrateToCanonicalSource,
                     workspaceDiscoveryRoots: $viewModel.workspaceDiscoveryRoots,
                     onAddWorkspaceRoot: viewModel.addWorkspaceDiscoveryRoot,
-                    onRemoveWorkspaceRoot: viewModel.removeWorkspaceDiscoveryRoot,
-                    onSyncNow: viewModel.syncNow
+                    onRemoveWorkspaceRoot: viewModel.removeWorkspaceDiscoveryRoot
                 )
-
-                Button("Refresh") {
-                    viewModel.refreshSources()
-                }
-                Button("Sync Now") {
-                    viewModel.syncNow()
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
         }
     }
@@ -132,7 +123,7 @@ private struct SidebarView: View {
                 ContentUnavailableView {
                     Label("No Skills Found", systemImage: "tray")
                 } description: {
-                    Text("Run Sync Now to discover skills, then select one to inspect.")
+                    Text("Skills are discovered automatically. Select one to inspect once available.")
                 }
             } else {
                 List(selection: $selectedSkillIDs) {
@@ -257,7 +248,6 @@ private struct SyncHealthToolbarControl: View {
     @Binding var workspaceDiscoveryRoots: [String]
     let onAddWorkspaceRoot: (String) -> Void
     let onRemoveWorkspaceRoot: (String) -> Void
-    let onSyncNow: () -> Void
     @State private var showDetails = false
 
     private var status: SyncStatusPresentation {
@@ -281,8 +271,7 @@ private struct SyncHealthToolbarControl: View {
                 autoMigrateToCanonicalSource: $autoMigrateToCanonicalSource,
                 workspaceDiscoveryRoots: $workspaceDiscoveryRoots,
                 onAddWorkspaceRoot: onAddWorkspaceRoot,
-                onRemoveWorkspaceRoot: onRemoveWorkspaceRoot,
-                onSyncNow: onSyncNow
+                onRemoveWorkspaceRoot: onRemoveWorkspaceRoot
             )
             .frame(minWidth: 320, idealWidth: 360)
             .padding(AppSpacing.lg)
@@ -569,7 +558,6 @@ private struct SyncHealthPopoverContent: View {
     @Binding var workspaceDiscoveryRoots: [String]
     let onAddWorkspaceRoot: (String) -> Void
     let onRemoveWorkspaceRoot: (String) -> Void
-    let onSyncNow: () -> Void
     @State private var newWorkspaceRoot: String = ""
     @State private var workspaceRootValidationMessage: String?
 
@@ -659,10 +647,6 @@ private struct SyncHealthPopoverContent: View {
                 Toggle("Auto-migrate source", isOn: $autoMigrateToCanonicalSource)
                     .toggleStyle(.checkbox)
                     .font(.app(.secondary))
-                Spacer()
-                Button("Sync Now") {
-                    onSyncNow()
-                }
             }
         }
     }

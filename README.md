@@ -6,12 +6,12 @@ Native macOS app for monitoring and controlling skills sync.
 
 - Sync health (`OK/FAILED/SYNCING`) + counts
 - Host app with searchable full skill list
+- Automatic sync on file changes (watchers + discovery refresh)
 - Direct actions from app:
   - Open in Zed
   - Reveal in Finder
   - Make global (move project skill to global scope)
   - Delete canonical source (move to Trash)
-  - Sync now
 
 ## Data contract
 

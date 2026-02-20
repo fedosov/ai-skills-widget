@@ -7,6 +7,7 @@ enum SyncTrigger {
     case delete
     case makeGlobal
     case rename
+    case autoFilesystem
 }
 
 enum SyncEngineError: LocalizedError {

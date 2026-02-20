@@ -37,7 +37,7 @@ struct InlineBannerPresentation: Equatable {
     let recoveryActionTitle: String?
 
     static func syncFailure(errorDetails: String?) -> InlineBannerPresentation {
-        let recovery = "Try Sync now. If this persists, open the app for details."
+        let recovery = "Automatic sync will retry. If this persists, open the app for details."
         let detailText = errorDetails?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let message = detailText.isEmpty ? recovery : "\(detailText) \(recovery)"
 
@@ -46,7 +46,7 @@ struct InlineBannerPresentation: Equatable {
             message: message,
             symbol: "exclamationmark.triangle.fill",
             role: .error,
-            recoveryActionTitle: "Sync now"
+            recoveryActionTitle: nil
         )
     }
 
@@ -133,7 +133,7 @@ extension SyncHealthStatus {
         case .unknown:
             return SyncStatusPresentation(
                 title: "Waiting for first sync",
-                subtitle: "Run Sync now to establish current state.",
+                subtitle: "Automatic sync will establish current state.",
                 symbol: "clock.badge.questionmark",
                 tint: .gray,
                 accessibilityLabel: "Waiting for first sync"
