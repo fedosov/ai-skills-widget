@@ -535,7 +535,9 @@ export function App() {
                 variant={activeTab === "mcp" ? "default" : "outline"}
                 className={cn(
                   "h-[calc(var(--control-height)+4px)] rounded-lg px-4 text-[13px]",
-                  activeTab === "mcp" ? "border-transparent" : "border-border/85",
+                  activeTab === "mcp"
+                    ? "border-transparent"
+                    : "border-border/85",
                 )}
                 disabled={busy}
                 onClick={() => setActiveTab("mcp")}

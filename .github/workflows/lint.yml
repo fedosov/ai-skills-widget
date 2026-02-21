@@ -1,3 +1,4 @@
+---
 name: Lint
 
 on:
@@ -7,6 +8,32 @@ on:
       - main
 
 jobs:
+  workflow-lint:
+    name: Workflow Lint (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.7.11"
+          curl -sSL "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz" \
+            | tar -xz actionlint
+          sudo mv actionlint /usr/local/bin/actionlint
+
+      - name: Run actionlint
+        run: actionlint
+
+      - name: Run yamllint on workflows
+        uses: ibiqlik/action-yamllint@v3.1.1
+        with:
+          file_or_dir: .github/workflows
+          config_file: .yamllint.yml
+          strict: true
+
   rust-lint:
     name: Rust Lint (macOS)
     runs-on: macos-latest
@@ -47,3 +74,19 @@ jobs:
 
       - name: Run UI lint
         run: make lint-ui
+
+  windows-tauri-preflight:
+    name: Windows Tauri Preflight
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate Tauri UI command resolution
+        working-directory: platform/apps/skillssync-desktop/src-tauri
+        run: node ./scripts/tauri-ui-command.mjs build --dry-run

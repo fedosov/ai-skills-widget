@@ -5,7 +5,7 @@ PLATFORM_DIR := $(ROOT_DIR)/platform
 UI_DIR := $(PLATFORM_DIR)/apps/skillssync-desktop/ui
 TAURI_DIR := $(PLATFORM_DIR)/apps/skillssync-desktop/src-tauri
 
-.PHONY: all build run app lint lint-fix lint-rust lint-fix-rust lint-ui lint-fix-ui
+.PHONY: all build run app lint lint-fix lint-rust lint-fix-rust lint-ui lint-fix-ui lint-workflows
 
 all: app
 
@@ -42,3 +42,15 @@ lint-ui:
 
 lint-fix-ui:
 	cd "$(UI_DIR)" && npm run lint:fix
+
+lint-workflows:
+	@if ! command -v actionlint >/dev/null 2>&1; then \
+		echo "actionlint is required. Install from https://github.com/rhysd/actionlint"; \
+		exit 1; \
+	fi
+	@if ! command -v yamllint >/dev/null 2>&1; then \
+		echo "yamllint is required. Install with: pip install yamllint"; \
+		exit 1; \
+	fi
+	actionlint
+	yamllint -c .yamllint.yml .github/workflows
