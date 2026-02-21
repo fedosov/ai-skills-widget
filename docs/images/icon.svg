@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Shadow for the main macOS app icon -->
+    <filter id="macOS-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.4"/>
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.2"/>
+    </filter>
+
+    <!-- Folder and Element Drop Shadow -->
+    <filter id="folder-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+    
+    <!-- Deep Drop Shadow for floating Ring -->
+    <filter id="ring-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+
+    <!-- Base Squircle Background -->
+    <linearGradient id="squircle-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2c2d30"/>
+      <stop offset="100%" stop-color="#111214"/>
+    </linearGradient>
+
+    <!-- Folder Back Gradient -->
+    <linearGradient id="folder-back-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0e62e1"/>
+      <stop offset="100%" stop-color="#053382"/>
+    </linearGradient>
+
+    <!-- Folder Front Gradient (Glass) -->
+    <linearGradient id="folder-front-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b99ff" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#1455c8" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- Inner Glass Edge -->
+    <linearGradient id="glass-edge-front" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.1"/>
+    </linearGradient>
+
+    <!-- Sync Ring Gradients -->
+    <linearGradient id="ring-back" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f5576c"/>
+      <stop offset="50%" stop-color="#a18cd1"/>
+      <stop offset="100%" stop-color="#4facfe"/>
+    </linearGradient>
+    
+    <linearGradient id="ring-front" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#4facfe"/>
+      <stop offset="33%" stop-color="#00f2fe"/>
+      <stop offset="66%" stop-color="#f093fb"/>
+      <stop offset="100%" stop-color="#f5576c"/>
+    </linearGradient>
+
+    <linearGradient id="icon-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#cbe3ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 1. BASE SQUIRCLE -->
+  <g filter="url(#macOS-shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#squircle-bg)"/>
+    <!-- Inner Border (MacOS characteristic) -->
+    <rect x="102" y="102" width="820" height="820" rx="184" fill="none" stroke="url(#glass-edge-front)" stroke-width="2" stroke-opacity="0.5"/>
+  </g>
+
+  <!-- 2. SYNC RING BACK HALF -->
+  <!-- Top Arc: from left to right -->
+  <path d="M 212 512 A 300 300 0 0 1 812 512" fill="none" stroke="url(#ring-back)" stroke-width="64" stroke-linecap="round" filter="url(#ring-shadow)"/>
+  <!-- Back Arrowhead (Right side, pointing down) -->
+  <polygon points="752,492 872,492 812,572" fill="#4facfe" filter="url(#ring-shadow)"/>
+
+  <!-- 3. FOLDER BACK -->
+  <path d="M 260 360 C 260 340 276 324 296 324 L 410 324 C 420 324 430 330 436 340 L 464 380 L 752 380 C 772 380 788 396 788 416 L 788 740 C 788 760 772 776 752 776 L 260 776 C 240 776 224 760 224 740 Z" fill="url(#folder-back-bg)" filter="url(#folder-shadow)"/>
+
+  <!-- 4. INNER PICTOGRAMS -->
+  <!-- Skills (Sparkles) -->
+  <g transform="translate(302, 360) scale(4)" fill="url(#icon-glow)" filter="url(#folder-shadow)">
+    <!-- Center Sparkle -->
+    <path d="M12 2 L13.5 8.5 L20 10 L13.5 11.5 L12 18 L10.5 11.5 L4 10 L10.5 8.5 Z" />
+    <!-- Bottom Right Sparkle -->
+    <path d="M18 13 L18.8 16.2 L22 17 L18.8 17.8 L18 21 L17.2 17.8 L14 17 L17.2 16.2 Z" />
+    <!-- Bottom Left Sparkle -->
+    <path d="M6 14 L6.5 16.5 L9 17 L6.5 17.5 L6 20 L5.5 17.5 L3 17 L5.5 16.5 Z" />
+  </g>
+
+  <!-- MCP (Network Node) -->
+  <g transform="translate(464, 360) scale(4)" filter="url(#folder-shadow)">
+    <rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="url(#icon-glow)" stroke-width="2"/>
+    <rect x="8" y="8" width="8" height="8" rx="1" fill="url(#icon-glow)"/>
+    <path d="M12 3v5 M12 16v5 M3 12h5 M16 12h5" stroke="url(#icon-glow)" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <!-- Tools (Wrench) -->
+  <g transform="translate(626, 360) scale(4)" fill="url(#icon-glow)" filter="url(#folder-shadow)">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  </g>
+
+  <!-- 5. FOLDER FRONT -->
+  <path d="M 200 776 L 824 776 C 844 776 856 760 850 740 L 806 460 C 800 440 780 424 760 424 L 256 424 C 236 424 216 440 210 460 L 166 740 C 160 760 176 776 200 776 Z" fill="url(#folder-front-bg)" filter="url(#folder-shadow)" stroke="url(#glass-edge-front)" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- 6. SYNC RING FRONT HALF -->
+  <!-- Bottom Arc: from right to left -->
+  <path d="M 812 512 A 300 300 0 0 1 212 512" fill="none" stroke="url(#ring-front)" stroke-width="64" stroke-linecap="round" filter="url(#ring-shadow)"/>
+  <!-- Front Arrowhead (Left side, pointing up) -->
+  <polygon points="152,532 272,532 212,452" fill="#f5576c" filter="url(#ring-shadow)"/>
+
+</svg>

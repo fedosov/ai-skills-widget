@@ -6,6 +6,7 @@ pub struct SyncPaths {
     pub runtime_directory: PathBuf,
     pub state_path: PathBuf,
     pub app_settings_path: PathBuf,
+    pub audit_log_path: PathBuf,
 }
 
 impl SyncPaths {
@@ -42,10 +43,12 @@ impl SyncPaths {
     pub fn from_runtime(runtime_directory: PathBuf) -> Self {
         let state_path = runtime_directory.join("state.json");
         let app_settings_path = runtime_directory.join("app-settings.json");
+        let audit_log_path = runtime_directory.join("audit-log.json");
         Self {
             runtime_directory,
             state_path,
             app_settings_path,
+            audit_log_path,
         }
     }
 

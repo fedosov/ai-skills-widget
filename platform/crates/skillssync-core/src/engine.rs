@@ -1,10 +1,12 @@
+use crate::audit_store::{SyncAuditStore, DEFAULT_AUDIT_LOG_LIMIT};
 use crate::codex_registry::CodexSkillsRegistryWriter;
 use crate::codex_subagent_registry::{CodexSubagentConfigEntry, CodexSubagentRegistryWriter};
 use crate::error::SyncEngineError;
 use crate::mcp_registry::{McpAgent, McpRegistry, McpSyncOutcome};
 use crate::models::{
-    McpServerRecord, SkillLifecycleStatus, SkillRecord, SubagentRecord, SyncConflict,
-    SyncConflictKind, SyncHealthStatus, SyncMetadata, SyncState, SyncSummary, SyncTrigger,
+    AuditEvent, AuditEventStatus, McpServerRecord, SkillLifecycleStatus, SkillRecord,
+    SubagentRecord, SyncConflict, SyncConflictKind, SyncHealthStatus, SyncMetadata, SyncState,
+    SyncSummary, SyncTrigger,
 };
 use crate::paths::{home_dir, SyncPaths};
 use crate::settings::{AppUiState, SyncPreferencesStore};
@@ -142,6 +144,7 @@ struct ArchivedSkillManifest {
 pub struct SyncEngine {
     environment: SyncEngineEnvironment,
     store: SyncStateStore,
+    audit_store: SyncAuditStore,
     preferences_store: SyncPreferencesStore,
     protected_segments: HashSet<String>,
 }
@@ -158,6 +161,7 @@ impl SyncEngine {
         Self {
             environment: SyncEngineEnvironment::current(),
             store: SyncStateStore::new(paths.clone()),
+            audit_store: SyncAuditStore::new(paths.clone()),
             preferences_store: SyncPreferencesStore::new(paths),
             protected_segments: HashSet::from([String::from(".system")]),
         }
@@ -171,6 +175,7 @@ impl SyncEngine {
         Self {
             environment,
             store,
+            audit_store: SyncAuditStore::new(preferences_store.paths().clone()),
             preferences_store,
             protected_segments: HashSet::from([String::from(".system")]),
         }
@@ -182,6 +187,42 @@ impl SyncEngine {
 
     pub fn load_state(&self) -> SyncState {
         self.store.load_state()
+    }
+
+    pub fn allow_filesystem_changes(&self) -> bool {
+        self.preferences_store.load_settings().allow_filesystem_changes
+    }
+
+    pub fn set_allow_filesystem_changes(&self, allow: bool) -> Result<(), SyncEngineError> {
+        let mut settings = self.preferences_store.load_settings();
+        settings.allow_filesystem_changes = allow;
+        self.preferences_store.save_settings(&settings)
+    }
+
+    pub fn list_audit_events(
+        &self,
+        limit: Option<usize>,
+        status_filter: Option<AuditEventStatus>,
+        action_filter: Option<&str>,
+    ) -> Vec<AuditEvent> {
+        self.audit_store
+            .list_events(limit, status_filter, action_filter)
+    }
+
+    pub fn record_audit_blocked(
+        &self,
+        action: &str,
+        summary: &str,
+        details: Option<String>,
+    ) -> Result<(), SyncEngineError> {
+        self.record_audit_event(
+            action,
+            AuditEventStatus::Blocked,
+            None,
+            summary.to_string(),
+            Vec::new(),
+            details,
+        )
     }
 
     pub fn starred_skill_ids(&self) -> Vec<String> {
@@ -305,7 +346,7 @@ impl SyncEngine {
             .find(|item| item.id == subagent_id)
     }
 
-    pub fn run_sync(&self, _trigger: SyncTrigger) -> Result<SyncState, SyncEngineError> {
+    pub fn run_sync(&self, trigger: SyncTrigger) -> Result<SyncState, SyncEngineError> {
         let started = Utc::now();
         let previous_state = self.store.load_state();
 
@@ -341,6 +382,15 @@ impl SyncEngine {
                     None,
                 );
                 self.store.save_state(&state)?;
+                let (summary, paths, details) = self.build_audit_sync_diff(&previous_state, &state);
+                let _ = self.record_audit_event(
+                    "run_sync",
+                    AuditEventStatus::Success,
+                    Some(trigger.as_str().to_string()),
+                    summary,
+                    paths,
+                    details,
+                );
                 Ok(state)
             }
             Err(error) => {
@@ -367,6 +417,14 @@ impl SyncEngine {
                     subagent_conflict_count,
                 );
                 let _ = self.store.save_state(&failed);
+                let _ = self.record_audit_event(
+                    "run_sync",
+                    AuditEventStatus::Failed,
+                    Some(trigger.as_str().to_string()),
+                    "Sync failed".to_string(),
+                    Vec::new(),
+                    Some(error.to_string()),
+                );
                 Err(error)
             }
         }
@@ -1019,6 +1077,110 @@ impl SyncEngine {
             top_skills: previous.top_skills,
             top_subagents: previous.top_subagents,
         }
+    }
+
+    fn record_audit_event(
+        &self,
+        action: &str,
+        status: AuditEventStatus,
+        trigger: Option<String>,
+        summary: String,
+        paths: Vec<String>,
+        details: Option<String>,
+    ) -> Result<(), SyncEngineError> {
+        self.audit_store.append_event(
+            AuditEvent {
+                id: Uuid::new_v4().to_string(),
+                occurred_at: iso8601_now(),
+                action: action.to_string(),
+                status,
+                trigger,
+                summary,
+                paths,
+                details,
+            },
+            DEFAULT_AUDIT_LOG_LIMIT,
+        )
+    }
+
+    fn build_audit_sync_diff(
+        &self,
+        previous: &SyncState,
+        current: &SyncState,
+    ) -> (String, Vec<String>, Option<String>) {
+        let previous_targets = collect_all_managed_paths(previous);
+        let current_targets = collect_all_managed_paths(current);
+
+        let added_targets = current_targets
+            .difference(&previous_targets)
+            .cloned()
+            .collect::<Vec<_>>();
+        let removed_targets = previous_targets
+            .difference(&current_targets)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let previous_canonical = collect_canonical_paths(previous);
+        let current_canonical = collect_canonical_paths(current);
+        let mut canonical_shift_lines = Vec::new();
+        let mut shifted_paths = Vec::new();
+
+        for (key, next_path) in &current_canonical {
+            let Some(previous_path) = previous_canonical.get(key) else {
+                continue;
+            };
+            if previous_path == next_path {
+                continue;
+            }
+
+            canonical_shift_lines.push(format!("{key}: {previous_path} -> {next_path}"));
+            shifted_paths.push(previous_path.clone());
+            shifted_paths.push(next_path.clone());
+        }
+
+        let mut paths = added_targets.clone();
+        paths.extend(removed_targets.clone());
+        paths.extend(shifted_paths);
+        paths.sort();
+        paths.dedup();
+
+        let summary = format!(
+            "target paths +{} -{}, canonical shifts {}",
+            added_targets.len(),
+            removed_targets.len(),
+            canonical_shift_lines.len()
+        );
+
+        let mut details = Vec::new();
+        if !added_targets.is_empty() {
+            details.push(format!(
+                "Added targets ({}): {}",
+                added_targets.len(),
+                compact_audit_list(&added_targets, 15)
+            ));
+        }
+        if !removed_targets.is_empty() {
+            details.push(format!(
+                "Removed targets ({}): {}",
+                removed_targets.len(),
+                compact_audit_list(&removed_targets, 15)
+            ));
+        }
+        if !canonical_shift_lines.is_empty() {
+            details.push(format!(
+                "Canonical shifts ({}): {}",
+                canonical_shift_lines.len(),
+                compact_audit_list(&canonical_shift_lines, 10)
+            ));
+        }
+
+        let details = if details.is_empty() {
+            None
+        } else {
+            Some(details.join("\n"))
+        };
+
+        (summary, paths, details)
     }
 
     fn discover_global_packages(&self) -> Vec<SkillPackage> {
@@ -2065,6 +2227,74 @@ impl SyncEngine {
             workspace.join(".cursor").join("agents"),
         ]
     }
+}
+
+fn collect_all_managed_paths(state: &SyncState) -> std::collections::BTreeSet<String> {
+    let mut paths = std::collections::BTreeSet::new();
+    for skill in &state.skills {
+        for path in &skill.target_paths {
+            paths.insert(path.clone());
+        }
+    }
+    for subagent in &state.subagents {
+        for path in &subagent.target_paths {
+            paths.insert(path.clone());
+        }
+    }
+    for server in &state.mcp_servers {
+        for path in &server.targets {
+            paths.insert(path.clone());
+        }
+    }
+    paths
+}
+
+fn collect_canonical_paths(state: &SyncState) -> std::collections::BTreeMap<String, String> {
+    let mut canonical = std::collections::BTreeMap::new();
+
+    for skill in &state.skills {
+        let status = if skill.status == SkillLifecycleStatus::Active {
+            "active"
+        } else {
+            "archived"
+        };
+        canonical.insert(
+            format!(
+                "skill:{status}:{}:{}:{}",
+                skill.scope,
+                skill.workspace.as_deref().unwrap_or("-"),
+                skill.skill_key
+            ),
+            skill.canonical_source_path.clone(),
+        );
+    }
+
+    for subagent in &state.subagents {
+        canonical.insert(
+            format!(
+                "subagent:{}:{}:{}",
+                subagent.scope,
+                subagent.workspace.as_deref().unwrap_or("-"),
+                subagent.subagent_key
+            ),
+            subagent.canonical_source_path.clone(),
+        );
+    }
+
+    canonical
+}
+
+fn compact_audit_list(items: &[String], limit: usize) -> String {
+    if items.is_empty() {
+        return String::new();
+    }
+    if items.len() <= limit {
+        return items.join(", ");
+    }
+
+    let mut preview = items.iter().take(limit).cloned().collect::<Vec<_>>();
+    preview.push(format!("... +{} more", items.len() - limit));
+    preview.join(", ")
 }
 
 fn create_symlink(destination: &Path, target: &Path) -> Result<(), SyncEngineError> {

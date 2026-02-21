@@ -5,15 +5,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { cn } from "./lib/utils";
 import {
+  getRuntimeControls,
   getSkillDetails,
   getState,
   getSubagentDetails,
+  listAuditEvents,
   listSubagents,
   mutateSkill,
   openSubagentPath,
   openSkillPath,
   renameSkill,
   runSync,
+  setAllowFilesystemChanges,
   setMcpServerEnabled,
 } from "./tauriApi";
 import {
@@ -23,8 +26,11 @@ import {
   sortAndFilterSkills,
 } from "./skillUtils";
 import type {
+  AuditEvent,
+  AuditEventStatus,
   McpServerRecord,
   MutationCommand,
+  RuntimeControls,
   SubagentDetails,
   SubagentRecord,
   SkillDetails,
@@ -35,6 +41,7 @@ import type {
 type FocusKind = "skills" | "subagents" | "mcp";
 type DeleteDialogState = { skillKey: string; confirmText: string } | null;
 type OpenTargetMenu = "skill" | "subagent" | null;
+type AuditStatusFilter = AuditEventStatus | "all";
 
 function toTitleCase(value: string): string {
   if (!value) {
@@ -71,6 +78,14 @@ function compactPath(path: string | null | undefined): string {
   return `/${segments[0]}/.../${segments[segments.length - 1]}`;
 }
 
+function formatIsoTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
 function ScopeMarker({ scope }: { scope: string }) {
   const scopeLabel = scope === "global" ? "Global" : "Project";
   return (
@@ -90,10 +105,18 @@ function ScopeMarker({ scope }: { scope: string }) {
 
 export function App() {
   const [state, setState] = useState<SyncState | null>(null);
+  const [runtimeControls, setRuntimeControls] =
+    useState<RuntimeControls | null>(null);
   const [details, setDetails] = useState<SkillDetails | null>(null);
   const [subagents, setSubagents] = useState<SubagentRecord[]>([]);
   const [subagentDetails, setSubagentDetails] =
     useState<SubagentDetails | null>(null);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [auditStatusFilter, setAuditStatusFilter] =
+    useState<AuditStatusFilter>("all");
+  const [auditActionFilter, setAuditActionFilter] = useState("");
+  const [auditBusy, setAuditBusy] = useState(false);
   const [focusKind, setFocusKind] = useState<FocusKind>("skills");
   const [selectedSkillKey, setSelectedSkillKey] = useState<string | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(
@@ -118,41 +141,42 @@ export function App() {
     [],
   );
 
-  const refreshState = useCallback(
+  const applySubagents = useCallback(
     async (preferredKey?: string | null) => {
-      setBusy(true);
+      const nextSubagents = await listSubagents("all");
+      setSubagents(nextSubagents);
+      setSelectedSubagentId((prev) => {
+        if (preferredKey && nextSubagents.some((item) => item.id === preferredKey)) {
+          return preferredKey;
+        }
+        if (prev && nextSubagents.some((item) => item.id === prev)) {
+          return prev;
+        }
+        return nextSubagents[0]?.id ?? null;
+      });
+    },
+    [],
+  );
+
+  const refreshState = useCallback(
+    async (
+      preferredKey?: string | null,
+      syncFirst = false,
+      withBusy = true,
+    ) => {
+      if (withBusy) {
+        setBusy(true);
+      }
       setError(null);
       try {
-        const next = await runSync();
-        const nextSubagents = await listSubagents("all");
-        setSubagents(nextSubagents);
-        setSelectedSubagentId((prev) => {
-          if (
-            preferredKey &&
-            nextSubagents.some((i) => i.id === preferredKey)
-          ) {
-            return preferredKey;
-          }
-          if (prev && nextSubagents.some((i) => i.id === prev)) {
-            return prev;
-          }
-          return nextSubagents[0]?.id ?? null;
-        });
+        const next = syncFirst ? await runSync() : await getState();
+        await applySubagents(preferredKey);
         applyState(next, preferredKey);
       } catch (invokeError) {
         setError(String(invokeError));
         try {
-          const [fallbackState, nextSubagents] = await Promise.all([
-            getState(),
-            listSubagents("all"),
-          ]);
-          setSubagents(nextSubagents);
-          setSelectedSubagentId((prev) => {
-            if (prev && nextSubagents.some((i) => i.id === prev)) {
-              return prev;
-            }
-            return nextSubagents[0]?.id ?? null;
-          });
+          const fallbackState = await getState();
+          await applySubagents(preferredKey);
           applyState(fallbackState, preferredKey);
         } catch (fallbackError) {
           setError(
@@ -160,15 +184,63 @@ export function App() {
           );
         }
       } finally {
+        if (withBusy) {
+          setBusy(false);
+        }
+      }
+    },
+    [applyState, applySubagents],
+  );
+
+  const loadAudit = useCallback(async () => {
+    setAuditBusy(true);
+    try {
+      const next = await listAuditEvents({
+        limit: 200,
+        status: auditStatusFilter === "all" ? undefined : auditStatusFilter,
+        action: auditActionFilter,
+      });
+      setAuditEvents(next);
+    } catch (invokeError) {
+      setError(String(invokeError));
+    } finally {
+      setAuditBusy(false);
+    }
+  }, [auditActionFilter, auditStatusFilter]);
+
+  const loadRuntime = useCallback(async () => {
+    try {
+      const next = await getRuntimeControls();
+      setRuntimeControls(next);
+    } catch (invokeError) {
+      setError(String(invokeError));
+    }
+  }, []);
+
+  const handleAllowToggle = useCallback(
+    async (allow: boolean) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const next = await setAllowFilesystemChanges(allow);
+        setRuntimeControls(next);
+        await refreshState(selectedSkillKey, false);
+      } catch (invokeError) {
+        setError(String(invokeError));
+        await loadRuntime();
+      } finally {
         setBusy(false);
       }
     },
-    [applyState],
+    [loadRuntime, refreshState, selectedSkillKey],
   );
 
   useEffect(() => {
-    void refreshState();
-  }, [refreshState]);
+    void (async () => {
+      await loadRuntime();
+      await refreshState(undefined, false);
+    })();
+  }, [loadRuntime, refreshState]);
 
   useEffect(() => {
     if (!state || state.skills.length === 0) {
@@ -253,6 +325,7 @@ export function App() {
       setOpenTargetMenu(null);
       setActionsMenuOpen(false);
       setDeleteDialog(null);
+      setAuditOpen(false);
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -260,6 +333,23 @@ export function App() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!runtimeControls?.allow_filesystem_changes) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void refreshState(undefined, false, false);
+      if (auditOpen) {
+        void loadAudit();
+      }
+    }, 3000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [auditOpen, loadAudit, refreshState, runtimeControls?.allow_filesystem_changes]);
 
   const filteredSkills = useMemo(() => {
     if (!state) return [];
@@ -422,6 +512,21 @@ export function App() {
     }
   }
 
+  async function handleSync() {
+    if (!runtimeControls?.allow_filesystem_changes) {
+      setError(
+        "Filesystem changes are disabled. Enable 'Allow filesystem changes' first.",
+      );
+      return;
+    }
+    await refreshState(selectedSkillKey, true);
+  }
+
+  async function handleOpenAuditLog() {
+    setAuditOpen(true);
+    await loadAudit();
+  }
+
   const activeSkillCount =
     state?.skills.filter((skill) => skill.status === "active").length ?? 0;
   const archivedSkillCount =
@@ -453,16 +558,62 @@ export function App() {
                 {activeSubagentCount} · MCP {mcpCount}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              aria-label="Refresh"
-              onClick={() => void refreshState(selectedSkillKey)}
-            >
-              Refresh
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || !runtimeControls?.allow_filesystem_changes}
+                aria-label="Sync"
+                onClick={() => void handleSync()}
+              >
+                Sync
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void handleOpenAuditLog()}
+              >
+                Audit log
+              </Button>
+              <div className="inline-flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
+                <span className="text-xs text-muted-foreground">Allow</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Allow filesystem changes"
+                  aria-checked={runtimeControls?.allow_filesystem_changes ?? false}
+                  disabled={busy}
+                  onClick={() =>
+                    void handleAllowToggle(
+                      !(runtimeControls?.allow_filesystem_changes ?? false),
+                    )
+                  }
+                  className={cn(
+                    "relative inline-flex h-6 w-11 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60",
+                    runtimeControls?.allow_filesystem_changes
+                      ? "border-primary/70 bg-primary/80"
+                      : "border-border bg-muted-foreground/25",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "inline-block h-4 w-4 transform rounded-full bg-background shadow-sm transition-transform",
+                      runtimeControls?.allow_filesystem_changes
+                        ? "translate-x-5"
+                        : "translate-x-1",
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
           </div>
+          {!runtimeControls?.allow_filesystem_changes ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Read-only mode: filesystem changes are blocked.
+            </p>
+          ) : null}
           <div className="mt-2.5">
             <Input
               value={query}
@@ -1221,6 +1372,109 @@ export function App() {
           </Card>
         </main>
       </div>
+
+      {auditOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Audit log"
+            className="flex h-[80vh] w-full max-w-4xl flex-col rounded-md border border-border/70 bg-card p-4"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">Audit log</h2>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setAuditOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="text-xs text-muted-foreground">
+                Status
+                <select
+                  aria-label="Audit status filter"
+                  className="mt-1 block rounded-md border border-border/70 bg-background px-2 py-1 text-xs"
+                  value={auditStatusFilter}
+                  onChange={(event) =>
+                    setAuditStatusFilter(event.currentTarget.value as AuditStatusFilter)
+                  }
+                >
+                  <option value="all">all</option>
+                  <option value="success">success</option>
+                  <option value="failed">failed</option>
+                  <option value="blocked">blocked</option>
+                </select>
+              </label>
+              <label className="text-xs text-muted-foreground">
+                Action
+                <Input
+                  aria-label="Audit action filter"
+                  value={auditActionFilter}
+                  placeholder="run_sync"
+                  onChange={(event) => setAuditActionFilter(event.currentTarget.value)}
+                  className="mt-1 min-w-[220px]"
+                />
+              </label>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={auditBusy}
+                onClick={() => void loadAudit()}
+              >
+                Apply
+              </Button>
+            </div>
+            <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-md border border-border/50">
+              {auditEvents.length === 0 ? (
+                <p className="p-3 text-xs text-muted-foreground">
+                  No audit events.
+                </p>
+              ) : (
+                <ul className="space-y-1 p-2">
+                  {auditEvents.map((event) => (
+                    <li
+                      key={event.id}
+                      className="rounded-md border border-border/40 bg-muted/20 p-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[11px]">
+                          {formatIsoTime(event.occurred_at)}
+                        </span>
+                        <Badge
+                          variant={
+                            event.status === "success"
+                              ? "success"
+                              : event.status === "blocked"
+                                ? "warning"
+                                : "error"
+                          }
+                        >
+                          {event.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs font-medium">
+                        {event.action}
+                        {event.trigger ? ` (${event.trigger})` : ""}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {event.summary}
+                      </p>
+                      {event.paths.length > 0 ? (
+                        <p className="mt-1 truncate font-mono text-[11px]">
+                          {event.paths.join(" · ")}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {deleteDialog ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">

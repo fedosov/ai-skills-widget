@@ -1,7 +1,7 @@
 use serde_json::Value as JsonValue;
 use skillssync_core::{
     McpAgent, ScopeFilter, SkillLifecycleStatus, SkillLocator, SyncEngine, SyncEngineEnvironment,
-    SyncPaths, SyncPreferencesStore, SyncStateStore, SyncTrigger,
+    SyncPaths, SyncPreferencesStore, SyncStateStore, SyncTrigger, AuditEventStatus,
 };
 use std::fs;
 use std::path::Path;
@@ -125,6 +125,30 @@ fn run_sync_builds_and_persists_state() {
 }
 
 #[test]
+fn run_sync_records_success_audit_event() {
+    let temp = TempDir::new().expect("tempdir");
+    let engine = engine_in_temp(&temp);
+
+    write_skill(
+        &engine
+            .environment()
+            .home_directory
+            .join(".claude")
+            .join("skills"),
+        "alpha",
+        "# A",
+    );
+
+    let _ = engine.run_sync(SyncTrigger::Manual).expect("sync state");
+    let events = engine.list_audit_events(Some(20), Some(AuditEventStatus::Success), Some("run_sync"));
+
+    assert!(!events.is_empty());
+    let event = &events[0];
+    assert_eq!(event.action, "run_sync");
+    assert_eq!(event.trigger.as_deref(), Some("manual"));
+}
+
+#[test]
 fn run_sync_reports_conflict_when_hashes_differ() {
     let temp = TempDir::new().expect("tempdir");
     let engine = engine_in_temp(&temp);
@@ -157,6 +181,10 @@ fn run_sync_reports_conflict_when_hashes_differ() {
     );
     assert_eq!(persisted.summary.conflict_count, 1);
     assert_eq!(persisted.subagent_summary.conflict_count, 0);
+
+    let failed_events = engine.list_audit_events(Some(20), Some(AuditEventStatus::Failed), Some("run_sync"));
+    assert!(!failed_events.is_empty());
+    assert_eq!(failed_events[0].action, "run_sync");
 }
 
 #[test]

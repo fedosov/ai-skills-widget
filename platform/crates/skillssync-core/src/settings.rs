@@ -7,6 +7,8 @@ pub struct SyncAppSettings {
     pub version: u32,
     #[serde(default, rename = "auto_migrate_to_canonical_source")]
     pub auto_migrate_to_canonical_source: bool,
+    #[serde(default, rename = "allow_filesystem_changes")]
+    pub allow_filesystem_changes: bool,
     #[serde(default, rename = "workspace_discovery_roots")]
     pub workspace_discovery_roots: Vec<String>,
     #[serde(default, rename = "window_state")]
@@ -20,6 +22,7 @@ impl Default for SyncAppSettings {
         Self {
             version: 2,
             auto_migrate_to_canonical_source: false,
+            allow_filesystem_changes: false,
             workspace_discovery_roots: Vec::new(),
             window_state: None,
             ui_state: None,
@@ -97,6 +100,7 @@ impl SyncPreferencesStore {
         let normalized = SyncAppSettings {
             version: 2,
             auto_migrate_to_canonical_source: settings.auto_migrate_to_canonical_source,
+            allow_filesystem_changes: settings.allow_filesystem_changes,
             workspace_discovery_roots: settings.workspace_discovery_roots.clone(),
             window_state: settings.window_state.clone(),
             ui_state: settings.ui_state.clone(),
@@ -122,6 +126,7 @@ mod tests {
         let raw = r#"{
           "version": 2,
           "auto_migrate_to_canonical_source": false,
+          "allow_filesystem_changes": false,
           "workspace_discovery_roots": [],
           "window_state": null,
           "ui_state": {
@@ -133,7 +138,22 @@ mod tests {
         }"#;
 
         let parsed: SyncAppSettings = serde_json::from_str(raw).expect("parse settings");
+        assert!(!parsed.allow_filesystem_changes);
         let starred = parsed.ui_state.expect("ui state").starred_skill_ids;
         assert!(starred.is_empty());
+    }
+
+    #[test]
+    fn settings_default_allow_filesystem_changes_when_missing() {
+        let raw = r#"{
+          "version": 2,
+          "auto_migrate_to_canonical_source": false,
+          "workspace_discovery_roots": [],
+          "window_state": null,
+          "ui_state": null
+        }"#;
+
+        let parsed: SyncAppSettings = serde_json::from_str(raw).expect("parse settings");
+        assert!(!parsed.allow_filesystem_changes);
     }
 }

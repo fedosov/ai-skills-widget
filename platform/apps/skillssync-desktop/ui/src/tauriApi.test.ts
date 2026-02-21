@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  getRuntimeControls,
   getStarredSkillIds,
   getState,
   getSkillDetails,
@@ -13,8 +14,10 @@ import {
   openSubagentPath,
   renameSkill,
   runSync,
+  setAllowFilesystemChanges,
   setSkillStarred,
   setMcpServerEnabled,
+  listAuditEvents,
 } from "./tauriApi";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -76,6 +79,27 @@ describe("tauriApi command payloads", () => {
   it("runs sync with manual trigger", async () => {
     await runSync();
     expect(invoke).toHaveBeenCalledWith("run_sync", { trigger: "manual" });
+  });
+
+  it("loads runtime controls without args", async () => {
+    await getRuntimeControls();
+    expect(invoke).toHaveBeenCalledWith("get_runtime_controls");
+  });
+
+  it("sets allow filesystem changes payload", async () => {
+    await setAllowFilesystemChanges(true);
+    expect(invoke).toHaveBeenCalledWith("set_allow_filesystem_changes", {
+      allow: true,
+    });
+  });
+
+  it("lists audit events with filters", async () => {
+    await listAuditEvents({ limit: 25, status: "blocked", action: "run_sync" });
+    expect(invoke).toHaveBeenCalledWith("list_audit_events", {
+      limit: 25,
+      status: "blocked",
+      action: "run_sync",
+    });
   });
 
   it("loads state without args", async () => {

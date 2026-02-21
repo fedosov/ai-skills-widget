@@ -2,17 +2,50 @@
 
 use serde::Serialize;
 use skillssync_core::{
-    McpAgent, McpServerRecord, ScopeFilter, SkillLifecycleStatus, SkillLocator, SkillRecord,
-    SubagentRecord, SyncEngine, SyncState, SyncTrigger,
+    watch::SyncWatchStream, AuditEvent, AuditEventStatus, McpAgent, McpServerRecord, ScopeFilter,
+    SkillLifecycleStatus, SkillLocator, SkillRecord, SubagentRecord, SyncEngine, SyncState,
+    SyncTrigger,
 };
 use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::UNIX_EPOCH;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant, UNIX_EPOCH};
+use tauri::Manager;
 
 const MAX_MAIN_FILE_PREVIEW_CHARS: usize = usize::MAX;
 const MAX_TREE_ENTRIES: usize = usize::MAX;
+const AUTO_WATCH_DEBOUNCE_MS: u64 = 800;
+
+#[derive(Debug, Clone, Serialize)]
+struct RuntimeControls {
+    allow_filesystem_changes: bool,
+    auto_watch_active: bool,
+}
+
+#[derive(Debug, Default)]
+struct WatchRuntime {
+    active: bool,
+    stop_tx: Option<mpsc::Sender<()>>,
+    handle: Option<JoinHandle<()>>,
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeState {
+    watch: Arc<Mutex<WatchRuntime>>,
+    sync_lock: Arc<Mutex<()>>,
+}
+
+impl Default for RuntimeState {
+    fn default() -> Self {
+        Self {
+            watch: Arc::new(Mutex::new(WatchRuntime::default())),
+            sync_lock: Arc::new(Mutex::new(())),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct PlatformContext {
@@ -64,9 +97,138 @@ struct SubagentTargetStatus {
     kind: SubagentTargetKind,
 }
 
+fn blocked_write_message(action: &str) -> String {
+    format!(
+        "Filesystem changes are disabled. Enable 'Allow filesystem changes' to run {action}."
+    )
+}
+
+fn ensure_write_allowed(engine: &SyncEngine, action: &str) -> Result<(), String> {
+    if engine.allow_filesystem_changes() {
+        return Ok(());
+    }
+    let summary = blocked_write_message(action);
+    let _ = engine.record_audit_blocked(action, &summary, None);
+    Err(summary)
+}
+
+fn parse_audit_status(value: Option<&str>) -> Result<Option<AuditEventStatus>, String> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "success" => Ok(Some(AuditEventStatus::Success)),
+        "failed" => Ok(Some(AuditEventStatus::Failed)),
+        "blocked" => Ok(Some(AuditEventStatus::Blocked)),
+        other => Err(format!(
+            "unsupported audit status: {other} (success|failed|blocked)"
+        )),
+    }
+}
+
+fn runtime_controls(engine: &SyncEngine, runtime: &RuntimeState) -> RuntimeControls {
+    let auto_watch_active = runtime
+        .watch
+        .lock()
+        .map(|state| state.active)
+        .unwrap_or(false);
+    RuntimeControls {
+        allow_filesystem_changes: engine.allow_filesystem_changes(),
+        auto_watch_active,
+    }
+}
+
+fn run_sync_with_lock(
+    engine: &SyncEngine,
+    runtime: &RuntimeState,
+    trigger: SyncTrigger,
+) -> Result<SyncState, String> {
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
+    engine.run_sync(trigger).map_err(|error| error.to_string())
+}
+
+fn stop_auto_watch(runtime: &RuntimeState) {
+    let mut handle_to_join: Option<JoinHandle<()>> = None;
+    if let Ok(mut state) = runtime.watch.lock() {
+        if !state.active {
+            return;
+        }
+        if let Some(stop_tx) = state.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        handle_to_join = state.handle.take();
+        state.active = false;
+    }
+
+    if let Some(handle) = handle_to_join {
+        let _ = handle.join();
+    }
+}
+
+fn start_auto_watch(runtime: &RuntimeState, engine: &SyncEngine) -> Result<(), String> {
+    if runtime
+        .watch
+        .lock()
+        .map(|state| state.active)
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    let watch_paths = engine.watch_paths();
+    let stream = SyncWatchStream::new(&watch_paths)
+        .map_err(|error| format!("failed to start filesystem watcher: {error}"))?;
+    let sync_lock = Arc::clone(&runtime.sync_lock);
+    let thread_engine = engine.clone();
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+
+    let handle = std::thread::spawn(move || {
+        let mut pending_since: Option<Instant> = None;
+
+        loop {
+            if stop_rx.try_recv().is_ok() {
+                break;
+            }
+
+            match stream.recv_timeout(Duration::from_millis(250)) {
+                Some(Ok(_)) => {
+                    pending_since = Some(Instant::now());
+                }
+                Some(Err(_)) => {}
+                None => {}
+            }
+
+            let should_sync = pending_since
+                .map(|started| started.elapsed() >= Duration::from_millis(AUTO_WATCH_DEBOUNCE_MS))
+                .unwrap_or(false);
+            if !should_sync {
+                continue;
+            }
+
+            pending_since = None;
+            if let Ok(_guard) = sync_lock.lock() {
+                let _ = thread_engine.run_sync(SyncTrigger::AutoFilesystem);
+            }
+        }
+    });
+
+    if let Ok(mut state) = runtime.watch.lock() {
+        state.stop_tx = Some(stop_tx);
+        state.handle = Some(handle);
+        state.active = true;
+        return Ok(());
+    }
+
+    Err(String::from("failed to update watcher runtime state"))
+}
+
 #[tauri::command]
-fn run_sync(trigger: Option<String>) -> Result<SyncState, String> {
+fn run_sync(trigger: Option<String>, runtime: tauri::State<RuntimeState>) -> Result<SyncState, String> {
     let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "run_sync")?;
     let parsed = trigger
         .as_deref()
         .map(SyncTrigger::try_from)
@@ -74,7 +236,47 @@ fn run_sync(trigger: Option<String>) -> Result<SyncState, String> {
         .map_err(|error| error.to_string())?
         .unwrap_or(SyncTrigger::Manual);
 
-    engine.run_sync(parsed).map_err(|error| error.to_string())
+    run_sync_with_lock(&engine, &runtime, parsed)
+}
+
+#[tauri::command]
+fn get_runtime_controls(runtime: tauri::State<RuntimeState>) -> RuntimeControls {
+    runtime_controls(&SyncEngine::current(), &runtime)
+}
+
+#[tauri::command]
+fn set_allow_filesystem_changes(
+    allow: bool,
+    runtime: tauri::State<RuntimeState>,
+) -> Result<RuntimeControls, String> {
+    let engine = SyncEngine::current();
+    engine
+        .set_allow_filesystem_changes(allow)
+        .map_err(|error| error.to_string())?;
+
+    if allow {
+        let _ = run_sync_with_lock(&engine, &runtime, SyncTrigger::Manual);
+        if let Err(error) = start_auto_watch(&runtime, &engine) {
+            let _ = engine.set_allow_filesystem_changes(false);
+            stop_auto_watch(&runtime);
+            return Err(error);
+        }
+    } else {
+        stop_auto_watch(&runtime);
+    }
+
+    Ok(runtime_controls(&engine, &runtime))
+}
+
+#[tauri::command]
+fn list_audit_events(
+    limit: Option<usize>,
+    status: Option<String>,
+    action: Option<String>,
+) -> Result<Vec<AuditEvent>, String> {
+    let parsed_status = parse_audit_status(status.as_deref())?;
+    let events = SyncEngine::current().list_audit_events(limit, parsed_status, action.as_deref());
+    Ok(events)
 }
 
 #[tauri::command]
@@ -142,11 +344,18 @@ fn set_mcp_server_enabled(
     enabled: bool,
     scope: Option<String>,
     workspace: Option<String>,
+    runtime: tauri::State<RuntimeState>,
 ) -> Result<SyncState, String> {
+    let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "set_mcp_server_enabled")?;
     let parsed = agent
         .parse::<McpAgent>()
         .map_err(|error| error.to_string())?;
-    SyncEngine::current()
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
+    engine
         .set_mcp_server_enabled(
             &server_key,
             parsed,
@@ -158,8 +367,17 @@ fn set_mcp_server_enabled(
 }
 
 #[tauri::command]
-fn delete_skill(skill_key: String, confirmed: bool) -> Result<SyncState, String> {
+fn delete_skill(
+    skill_key: String,
+    confirmed: bool,
+    runtime: tauri::State<RuntimeState>,
+) -> Result<SyncState, String> {
     let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "delete_skill")?;
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
     let skill = find_skill(&engine, &skill_key, None)?;
     engine
         .delete(&skill, confirmed)
@@ -167,8 +385,17 @@ fn delete_skill(skill_key: String, confirmed: bool) -> Result<SyncState, String>
 }
 
 #[tauri::command]
-fn archive_skill(skill_key: String, confirmed: bool) -> Result<SyncState, String> {
+fn archive_skill(
+    skill_key: String,
+    confirmed: bool,
+    runtime: tauri::State<RuntimeState>,
+) -> Result<SyncState, String> {
     let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "archive_skill")?;
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
     let skill = find_skill(&engine, &skill_key, Some(SkillLifecycleStatus::Active))?;
     engine
         .archive(&skill, confirmed)
@@ -176,8 +403,17 @@ fn archive_skill(skill_key: String, confirmed: bool) -> Result<SyncState, String
 }
 
 #[tauri::command]
-fn restore_skill(skill_key: String, confirmed: bool) -> Result<SyncState, String> {
+fn restore_skill(
+    skill_key: String,
+    confirmed: bool,
+    runtime: tauri::State<RuntimeState>,
+) -> Result<SyncState, String> {
     let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "restore_skill")?;
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
     let skill = find_skill(&engine, &skill_key, Some(SkillLifecycleStatus::Archived))?;
     engine
         .restore(&skill, confirmed)
@@ -185,8 +421,17 @@ fn restore_skill(skill_key: String, confirmed: bool) -> Result<SyncState, String
 }
 
 #[tauri::command]
-fn make_global(skill_key: String, confirmed: bool) -> Result<SyncState, String> {
+fn make_global(
+    skill_key: String,
+    confirmed: bool,
+    runtime: tauri::State<RuntimeState>,
+) -> Result<SyncState, String> {
     let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "make_global")?;
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
     let skill = find_skill(&engine, &skill_key, Some(SkillLifecycleStatus::Active))?;
     engine
         .make_global(&skill, confirmed)
@@ -194,8 +439,17 @@ fn make_global(skill_key: String, confirmed: bool) -> Result<SyncState, String> 
 }
 
 #[tauri::command]
-fn rename_skill(skill_key: String, new_title: String) -> Result<SyncState, String> {
+fn rename_skill(
+    skill_key: String,
+    new_title: String,
+    runtime: tauri::State<RuntimeState>,
+) -> Result<SyncState, String> {
     let engine = SyncEngine::current();
+    ensure_write_allowed(&engine, "rename_skill")?;
+    let _guard = runtime
+        .sync_lock
+        .lock()
+        .map_err(|_| String::from("internal lock error"))?;
     let skill = find_skill(&engine, &skill_key, Some(SkillLifecycleStatus::Active))?;
     engine
         .rename(&skill, &new_title)
@@ -634,9 +888,26 @@ fn open_path(path: &Path) -> Result<(), String> {
 }
 
 fn main() {
+    let runtime_state = RuntimeState::default();
     tauri::Builder::default()
+        .manage(runtime_state)
+        .setup(|app| {
+            let runtime = app.state::<RuntimeState>();
+            let engine = SyncEngine::current();
+            if engine.allow_filesystem_changes() {
+                let _ = run_sync_with_lock(&engine, &runtime, SyncTrigger::Manual);
+                if let Err(error) = start_auto_watch(&runtime, &engine) {
+                    eprintln!("failed to start auto watch on startup: {error}");
+                    let _ = engine.set_allow_filesystem_changes(false);
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             run_sync,
+            get_runtime_controls,
+            set_allow_filesystem_changes,
+            list_audit_events,
             get_state,
             get_starred_skill_ids,
             set_skill_starred,

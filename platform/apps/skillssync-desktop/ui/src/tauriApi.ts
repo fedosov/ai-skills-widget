@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AuditEvent,
+  AuditQuery,
   MutationCommand,
   McpServerRecord,
   PlatformContext,
+  RuntimeControls,
   SubagentDetails,
   SubagentRecord,
   SkillDetails,
@@ -29,6 +32,36 @@ export async function setSkillStarred(
 
 export async function runSync(): Promise<SyncState> {
   return invoke<SyncState>("run_sync", { trigger: "manual" });
+}
+
+export async function getRuntimeControls(): Promise<RuntimeControls> {
+  return invoke<RuntimeControls>("get_runtime_controls");
+}
+
+export async function setAllowFilesystemChanges(
+  allow: boolean,
+): Promise<RuntimeControls> {
+  return invoke<RuntimeControls>("set_allow_filesystem_changes", { allow });
+}
+
+export async function listAuditEvents(
+  query?: AuditQuery,
+): Promise<AuditEvent[]> {
+  const payload: {
+    limit?: number;
+    status?: string;
+    action?: string;
+  } = {};
+  if (query?.limit) {
+    payload.limit = query.limit;
+  }
+  if (query?.status) {
+    payload.status = query.status;
+  }
+  if (query?.action?.trim()) {
+    payload.action = query.action.trim();
+  }
+  return invoke<AuditEvent[]>("list_audit_events", payload);
 }
 
 export async function getSkillDetails(skillKey: string): Promise<SkillDetails> {

@@ -30,6 +30,28 @@ pub struct SyncState {
     pub top_subagents: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditEventStatus {
+    Success,
+    Failed,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditEvent {
+    pub id: String,
+    #[serde(rename = "occurred_at")]
+    pub occurred_at: String,
+    pub action: String,
+    pub status: AuditEventStatus,
+    pub trigger: Option<String>,
+    pub summary: String,
+    #[serde(default)]
+    pub paths: Vec<String>,
+    pub details: Option<String>,
+}
+
 impl SyncState {
     pub fn empty() -> Self {
         Self {

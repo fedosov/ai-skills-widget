@@ -37,6 +37,30 @@ export type SubagentRecord = {
   codex_tools_ignored: boolean;
 };
 
+export type RuntimeControls = {
+  allow_filesystem_changes: boolean;
+  auto_watch_active: boolean;
+};
+
+export type AuditEventStatus = "success" | "failed" | "blocked";
+
+export type AuditEvent = {
+  id: string;
+  occurred_at: string;
+  action: string;
+  status: AuditEventStatus;
+  trigger: string | null;
+  summary: string;
+  paths: string[];
+  details: string | null;
+};
+
+export type AuditQuery = {
+  limit?: number;
+  status?: AuditEventStatus;
+  action?: string;
+};
+
 export type SyncSummary = {
   global_count: number;
   project_count: number;

@@ -11,6 +11,9 @@ import type {
 } from "./types";
 
 vi.mock("./tauriApi", () => ({
+  getRuntimeControls: vi.fn(),
+  setAllowFilesystemChanges: vi.fn(),
+  listAuditEvents: vi.fn(),
   getState: vi.fn(),
   runSync: vi.fn(),
   getSkillDetails: vi.fn(),
@@ -108,6 +111,15 @@ function setApiDefaults(
   detailsBySkillKey: Record<string, SkillDetails>,
 ) {
   vi.mocked(tauriApi.getState).mockResolvedValue(state);
+  vi.mocked(tauriApi.getRuntimeControls).mockResolvedValue({
+    allow_filesystem_changes: false,
+    auto_watch_active: false,
+  });
+  vi.mocked(tauriApi.setAllowFilesystemChanges).mockResolvedValue({
+    allow_filesystem_changes: true,
+    auto_watch_active: true,
+  });
+  vi.mocked(tauriApi.listAuditEvents).mockResolvedValue([]);
   vi.mocked(tauriApi.getStarredSkillIds).mockResolvedValue([]);
   vi.mocked(tauriApi.listSubagents).mockResolvedValue([
     {
@@ -461,5 +473,100 @@ describe("App quiet redesign", () => {
     expect(
       screen.queryByRole("dialog", { name: "Confirm delete" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not run sync on startup when allow is disabled", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    expect(tauriApi.runSync).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Sync" })).toBeDisabled();
+  });
+
+  it("runs sync only after allow is enabled", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    const syncButton = screen.getByRole("button", { name: "Sync" });
+    expect(syncButton).toBeDisabled();
+    expect(tauriApi.runSync).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("switch", { name: "Allow filesystem changes" }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApi.setAllowFilesystemChanges).toHaveBeenCalledWith(true);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Sync" }));
+    await waitFor(() => {
+      expect(tauriApi.runSync).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("opens audit log panel and renders events", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+    vi.mocked(tauriApi.listAuditEvents).mockResolvedValue([
+      {
+        id: "evt-1",
+        occurred_at: "2026-02-21T12:00:00Z",
+        action: "run_sync",
+        status: "success",
+        trigger: "manual",
+        summary: "target paths +1 -0, canonical shifts 0",
+        paths: ["/tmp/a", "/tmp/b"],
+        details: null,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    await user.click(screen.getByRole("button", { name: "Audit log" }));
+
+    expect(screen.getByRole("dialog", { name: "Audit log" })).toBeInTheDocument();
+    expect(screen.getByText("run_sync")).toBeInTheDocument();
+  });
+
+  it("shows backend blocked error when write action is denied", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+    vi.mocked(tauriApi.mutateSkill).mockRejectedValueOnce(
+      new Error(
+        "Filesystem changes are disabled. Enable 'Allow filesystem changes' to run delete_skill.",
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+    await user.type(screen.getByLabelText("Type DELETE to confirm"), "DELETE");
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    await screen.findByText(/Filesystem changes are disabled/i);
   });
 });
