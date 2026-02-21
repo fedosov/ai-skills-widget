@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AuditEvent,
   AuditQuery,
+  DashboardSnapshot,
   MutationCommand,
   McpServerRecord,
   PlatformContext,
@@ -18,6 +19,19 @@ export async function getState(): Promise<SyncState> {
 
 export async function getStarredSkillIds(): Promise<string[]> {
   return invoke<string[]>("get_starred_skill_ids");
+}
+
+export async function loadDashboardSnapshot(): Promise<DashboardSnapshot> {
+  const [state, starredSkillIds, subagents] = await Promise.all([
+    getState(),
+    getStarredSkillIds(),
+    listSubagents("all"),
+  ]);
+  return {
+    state,
+    starredSkillIds,
+    subagents,
+  };
 }
 
 export async function setSkillStarred(

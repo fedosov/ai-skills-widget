@@ -2,6 +2,7 @@ SHELL := /bin/bash
 
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 PLATFORM_DIR := $(ROOT_DIR)/platform
+APP_DIR := $(PLATFORM_DIR)/apps/skillssync-desktop
 UI_DIR := $(PLATFORM_DIR)/apps/skillssync-desktop/ui
 TAURI_DIR := $(PLATFORM_DIR)/apps/skillssync-desktop/src-tauri
 
@@ -20,7 +21,7 @@ build:
 		echo "Installing UI dependencies..."; \
 		(cd "$(UI_DIR)" && npm install); \
 	fi
-	cd "$(TAURI_DIR)" && cargo tauri build --debug
+	cd "$(APP_DIR)" && cargo tauri build --debug
 
 run:
 	"$(ROOT_DIR)/scripts/run-tauri-gui.sh"

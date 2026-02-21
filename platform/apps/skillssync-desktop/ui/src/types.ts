@@ -42,6 +42,13 @@ export type RuntimeControls = {
   auto_watch_active: boolean;
 };
 
+export type RefreshIntervalMinutes = 0 | 5 | 15 | 30;
+
+export type UiSettings = {
+  refreshIntervalMinutes: RefreshIntervalMinutes;
+  lastActiveTab: "skills" | "subagents" | "mcp";
+};
+
 export type AuditEventStatus = "success" | "failed" | "blocked";
 
 export type AuditEvent = {
@@ -108,6 +115,12 @@ export type SyncState = {
   mcp_servers?: McpServerRecord[];
   top_skills?: string[];
   top_subagents?: string[];
+};
+
+export type DashboardSnapshot = {
+  state: SyncState;
+  starredSkillIds: string[];
+  subagents: SubagentRecord[];
 };
 
 export type SkillDetails = {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   getRuntimeControls,
+  loadDashboardSnapshot,
   getStarredSkillIds,
   getState,
   getSkillDetails,
@@ -159,5 +160,13 @@ describe("tauriApi command payloads", () => {
       scope: "project",
       workspace: "/tmp/workspace-a",
     });
+  });
+
+  it("loads dashboard snapshot via existing commands", async () => {
+    await loadDashboardSnapshot();
+
+    expect(invoke).toHaveBeenCalledWith("get_state");
+    expect(invoke).toHaveBeenCalledWith("get_starred_skill_ids");
+    expect(invoke).toHaveBeenCalledWith("list_subagents", { scope: "all" });
   });
 });

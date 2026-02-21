@@ -4,8 +4,8 @@
   "version": "0.2.0",
   "identifier": "dev.fedosov.skillssync.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm --prefix . run dev || npm --prefix ./ui run dev || npm --prefix ../ui run dev",
+    "beforeBuildCommand": "npm --prefix . run build || npm --prefix ./ui run build || npm --prefix ../ui run build",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../ui/dist"
   },
