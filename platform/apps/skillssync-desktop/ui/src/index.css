@@ -5,34 +5,34 @@
 @layer base {
   :root {
     color-scheme: light dark;
-    --background: 220 23% 97%;
-    --foreground: 223 20% 16%;
+    --background: 0 0% 96%;
+    --foreground: 0 0% 16%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 223 20% 16%;
+    --card: 0 0% 99%;
+    --card-foreground: 0 0% 16%;
 
-    --primary: 217 78% 53%;
+    --primary: 0 0% 24%;
     --primary-foreground: 0 0% 100%;
 
-    --muted: 220 22% 94%;
-    --muted-foreground: 220 10% 41%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 0 0% 38%;
 
-    --accent: 214 27% 92%;
-    --accent-foreground: 223 20% 16%;
+    --accent: 0 0% 89%;
+    --accent-foreground: 0 0% 16%;
 
     --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 82%;
-    --input: 220 15% 82%;
-    --ring: 217 84% 54%;
+    --border: 0 0% 79%;
+    --input: 0 0% 77%;
+    --ring: 0 0% 34%;
 
-    --radius-lg: 12px;
-    --radius-md: 9px;
-    --radius-sm: 7px;
-    --control-height: 32px;
-    --control-height-sm: 28px;
-    --focus-ring-width: 2px;
+    --radius-lg: 8px;
+    --radius-md: 6px;
+    --radius-sm: 4px;
+    --control-height: 28px;
+    --control-height-sm: 24px;
+    --focus-ring-width: 1px;
     --font-sans:
       -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
       "Noto Sans", "Helvetica Neue", Arial, sans-serif;
@@ -42,11 +42,11 @@
   }
 
   :root[data-platform="macos"] {
-    --radius-lg: 12px;
-    --radius-md: 9px;
-    --radius-sm: 7px;
-    --control-height: 30px;
-    --control-height-sm: 26px;
+    --radius-lg: 8px;
+    --radius-md: 6px;
+    --radius-sm: 4px;
+    --control-height: 27px;
+    --control-height-sm: 23px;
     --font-sans:
       -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
       "Helvetica Neue", Arial, sans-serif;
@@ -54,21 +54,21 @@
   }
 
   :root[data-platform="windows"] {
-    --radius-lg: 10px;
-    --radius-md: 8px;
-    --radius-sm: 6px;
-    --control-height: 32px;
-    --control-height-sm: 28px;
+    --radius-lg: 8px;
+    --radius-md: 6px;
+    --radius-sm: 4px;
+    --control-height: 28px;
+    --control-height-sm: 24px;
     --font-sans: "Segoe UI Variable", "Segoe UI", Tahoma, Arial, sans-serif;
     --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
   }
 
   :root[data-platform="linux"] {
-    --radius-lg: 10px;
-    --radius-md: 8px;
-    --radius-sm: 6px;
-    --control-height: 32px;
-    --control-height-sm: 28px;
+    --radius-lg: 8px;
+    --radius-md: 6px;
+    --radius-sm: 4px;
+    --control-height: 28px;
+    --control-height-sm: 24px;
     --font-sans:
       Cantarell, "Noto Sans", "DejaVu Sans", Ubuntu, Arial, sans-serif;
     --font-mono:
@@ -77,27 +77,27 @@
 
   @media (prefers-color-scheme: dark) {
     :root {
-      --background: 222 16% 10%;
-      --foreground: 214 24% 93%;
+      --background: 0 0% 7%;
+      --foreground: 0 0% 90%;
 
-      --card: 223 16% 13%;
-      --card-foreground: 214 24% 93%;
+      --card: 0 0% 10%;
+      --card-foreground: 0 0% 90%;
 
-      --primary: 214 90% 66%;
-      --primary-foreground: 222 16% 10%;
+      --primary: 0 0% 82%;
+      --primary-foreground: 0 0% 8%;
 
-      --muted: 220 12% 19%;
-      --muted-foreground: 214 10% 70%;
+      --muted: 0 0% 14%;
+      --muted-foreground: 0 0% 67%;
 
-      --accent: 220 12% 20%;
-      --accent-foreground: 214 24% 93%;
+      --accent: 0 0% 16%;
+      --accent-foreground: 0 0% 90%;
 
       --destructive: 0 70% 54%;
       --destructive-foreground: 0 0% 100%;
 
-      --border: 220 11% 28%;
-      --input: 220 11% 30%;
-      --ring: 214 90% 66%;
+      --border: 0 0% 22%;
+      --input: 0 0% 24%;
+      --ring: 0 0% 66%;
     }
   }
 
@@ -139,17 +139,7 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
-    background-image:
-      radial-gradient(
-        circle at 8% -30%,
-        hsl(213 56% 54% / 0.12) 0%,
-        transparent 55%
-      ),
-      radial-gradient(
-        circle at 96% -16%,
-        hsl(191 52% 46% / 0.1) 0%,
-        transparent 48%
-      );
+    background-image: none;
   }
 
   ::selection {

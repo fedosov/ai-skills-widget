@@ -3,22 +3,22 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md border text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[length:var(--focus-ring-width)] focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-sm border text-[12px] font-medium leading-none transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         default:
-          "border-primary/55 bg-primary text-primary-foreground shadow-sm hover:bg-primary/92",
+          "border-primary/55 bg-primary text-primary-foreground hover:bg-primary/90",
         ghost:
           "border-transparent text-foreground hover:bg-accent hover:text-accent-foreground",
         outline:
           "border-border bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground",
         destructive:
-          "border-destructive/60 bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/92",
+          "border-destructive/60 bg-destructive text-destructive-foreground hover:bg-destructive/92",
       },
       size: {
-        default: "h-[var(--control-height)] px-3.5",
-        sm: "h-[var(--control-height-sm)] px-2.5 text-[12px]",
+        default: "h-[var(--control-height)] px-3",
+        sm: "h-[var(--control-height-sm)] px-2 text-[11px]",
       },
     },
     defaultVariants: {

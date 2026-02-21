@@ -199,10 +199,11 @@ describe("App critical actions", () => {
     const main = screen.getByRole("main");
     expect(main).toHaveClass("lg:min-h-0");
     expect(main).toHaveClass("lg:flex-1");
+    expect(main).toHaveClass("gap-2");
 
     const skillsCard = screen
       .getByRole("heading", { name: "Skills" })
-      .closest(".rounded-lg");
+      .closest(".rounded-md");
     expect(skillsCard).not.toBeNull();
     expect(skillsCard).toHaveClass("lg:flex");
     expect(skillsCard).toHaveClass("lg:flex-col");
@@ -222,7 +223,7 @@ describe("App critical actions", () => {
 
     const detailsCard = screen
       .getByRole("heading", { name: projectSkill.name })
-      .closest(".rounded-lg");
+      .closest(".rounded-md");
     expect(detailsCard).not.toBeNull();
     expect(detailsCard).toHaveClass("lg:flex");
     expect(detailsCard).toHaveClass("lg:flex-col");
@@ -238,6 +239,47 @@ describe("App critical actions", () => {
     expect(detailsScroller).toHaveClass("lg:flex-1");
     expect(detailsScroller).toHaveClass("lg:min-h-0");
     expect(detailsScroller).toHaveClass("lg:overflow-y-auto");
+  });
+
+  it("renders compact dense shell and list rows", async () => {
+    const state = buildState([projectSkill, globalSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+      [globalSkill.skill_key]: buildDetails(globalSkill),
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    const searchInput = screen.getByPlaceholderText(
+      "Search by name, key, scope or workspace",
+    );
+    expect(searchInput).toHaveClass("h-[var(--control-height)]");
+    expect(searchInput).toHaveClass("text-[12px]");
+    expect(searchInput).toHaveClass("rounded-sm");
+
+    const skillButton = screen.getByRole("button", { name: /Project Skill/i });
+    expect(skillButton).toHaveClass("px-2");
+    expect(skillButton).toHaveClass("py-1.5");
+    expect(skillButton).toHaveClass("rounded-sm");
+  });
+
+  it("keeps focus ring classes on compact controls", async () => {
+    const state = buildState([projectSkill]);
+    setApiDefaults(state, {
+      [projectSkill.skill_key]: buildDetails(projectSkill),
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: projectSkill.name });
+
+    const refreshButton = screen.getByRole("button", { name: "Refresh" });
+    expect(refreshButton).toHaveClass("focus-visible:ring-1");
+    expect(refreshButton).toHaveClass("focus-visible:ring-ring");
+
+    const renameInput = screen.getByPlaceholderText("New skill title");
+    expect(renameInput).toHaveClass("focus-visible:ring-1");
+    expect(renameInput).toHaveClass("focus-visible:ring-ring");
   });
 
   it("loads initial state and selected skill details", async () => {
@@ -293,7 +335,7 @@ describe("App critical actions", () => {
 
     const skillsCard = screen
       .getByRole("heading", { name: "Skills" })
-      .closest(".rounded-lg");
+      .closest(".rounded-md");
     expect(skillsCard).not.toBeNull();
     if (!(skillsCard instanceof HTMLElement)) {
       throw new Error("Skills card must be an HTMLElement.");

@@ -437,9 +437,9 @@ export function App() {
 
   return (
     <div className="min-h-full bg-background text-foreground lg:h-screen lg:overflow-hidden">
-      <div className="mx-auto flex min-h-full max-w-[1400px] flex-col gap-2.5 p-3 lg:h-full lg:min-h-0 lg:p-4">
-        <header className="shrink-0 rounded-lg border border-border/90 bg-card/92 px-3 py-2 shadow-[0_1px_0_hsl(var(--foreground)/0.04)]">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="mx-auto flex min-h-full max-w-[1400px] flex-col gap-2 p-2.5 lg:h-full lg:min-h-0 lg:p-3">
+        <header className="shrink-0 rounded-md border border-border/90 bg-card px-2.5 py-2 shadow-none">
+          <div className="flex flex-wrap items-start justify-between gap-2.5">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-semibold tracking-tight text-dense">
@@ -478,7 +478,7 @@ export function App() {
                 size="default"
                 variant={activeTab === "skills" ? "default" : "outline"}
                 className={cn(
-                  "h-[calc(var(--control-height)+4px)] rounded-lg px-4 text-[13px]",
+                  "h-[var(--control-height)] rounded-sm px-3 text-[12px]",
                   activeTab === "skills"
                     ? "border-transparent"
                     : "border-border/85",
@@ -492,7 +492,7 @@ export function App() {
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "ml-2 inline-flex min-w-12 items-center justify-center rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
+                    "ml-1.5 inline-flex min-w-10 items-center justify-center rounded-sm px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none",
                     activeTab === "skills"
                       ? "bg-primary-foreground/16 text-primary-foreground"
                       : "bg-muted text-muted-foreground",
@@ -506,7 +506,7 @@ export function App() {
                 size="default"
                 variant={activeTab === "subagents" ? "default" : "outline"}
                 className={cn(
-                  "h-[calc(var(--control-height)+4px)] rounded-lg px-4 text-[13px]",
+                  "h-[var(--control-height)] rounded-sm px-3 text-[12px]",
                   activeTab === "subagents"
                     ? "border-transparent"
                     : "border-border/85",
@@ -520,7 +520,7 @@ export function App() {
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "ml-2 inline-flex min-w-12 items-center justify-center rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
+                    "ml-1.5 inline-flex min-w-10 items-center justify-center rounded-sm px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none",
                     activeTab === "subagents"
                       ? "bg-primary-foreground/16 text-primary-foreground"
                       : "bg-muted text-muted-foreground",
@@ -534,7 +534,7 @@ export function App() {
                 size="default"
                 variant={activeTab === "mcp" ? "default" : "outline"}
                 className={cn(
-                  "h-[calc(var(--control-height)+4px)] rounded-lg px-4 text-[13px]",
+                  "h-[var(--control-height)] rounded-sm px-3 text-[12px]",
                   activeTab === "mcp"
                     ? "border-transparent"
                     : "border-border/85",
@@ -548,7 +548,7 @@ export function App() {
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "ml-2 inline-flex min-w-12 items-center justify-center rounded-md px-2 py-0.5 text-[11px] font-semibold tabular-nums leading-none",
+                    "ml-1.5 inline-flex min-w-10 items-center justify-center rounded-sm px-1.5 py-0.5 text-[10px] font-semibold tabular-nums leading-none",
                     activeTab === "mcp"
                       ? "bg-primary-foreground/16 text-primary-foreground"
                       : "bg-muted text-muted-foreground",
@@ -605,7 +605,7 @@ export function App() {
           </Card>
         ) : null}
 
-        <main className="grid gap-2.5 lg:min-h-0 lg:flex-1 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <main className="grid gap-2 lg:min-h-0 lg:flex-1 lg:grid-cols-[320px_minmax(0,1fr)]">
           <Card className="min-h-[520px] overflow-hidden lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             <CardHeader className="border-b border-border/80 pb-2">
               <div className="flex items-center justify-between gap-2">
@@ -635,8 +635,8 @@ export function App() {
                           <button
                             type="button"
                             className={cn(
-                              "w-full rounded-md border px-2.5 py-2 text-left transition-colors duration-150",
-                              "hover:border-border hover:bg-accent/70",
+                              "w-full rounded-sm border px-2 py-1.5 text-left transition-colors duration-150",
+                              "hover:border-border hover:bg-accent/65",
                               selected
                                 ? "border-primary/45 bg-accent/80 text-foreground"
                                 : "border-border/70 bg-transparent text-foreground",
@@ -651,11 +651,11 @@ export function App() {
                                 {toTitleCase(subagent.scope)}
                               </Badge>
                             </div>
-                            <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                            <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                               {subagent.subagent_key}
                             </p>
                             {subagent.workspace ? (
-                              <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                                 {subagent.workspace}
                               </p>
                             ) : null}
@@ -672,8 +672,8 @@ export function App() {
                             <button
                               type="button"
                               className={cn(
-                                "w-full rounded-md border px-2.5 py-2 text-left transition-colors duration-150",
-                                "hover:border-border hover:bg-accent/70",
+                                "w-full rounded-sm border px-2 py-1.5 text-left transition-colors duration-150",
+                                "hover:border-border hover:bg-accent/65",
                                 selected
                                   ? "border-primary/45 bg-accent/80 text-foreground"
                                   : "border-border/70 bg-transparent text-foreground",
@@ -688,13 +688,13 @@ export function App() {
                                   {`${server.transport.toUpperCase()} · ${toTitleCase(server.scope)}`}
                                 </Badge>
                               </div>
-                              <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                                 {server.command ??
                                   server.url ??
                                   "No command/url"}
                               </p>
                               {server.workspace ? (
-                                <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                                   {server.workspace}
                                 </p>
                               ) : null}
@@ -715,8 +715,8 @@ export function App() {
                             <button
                               type="button"
                               className={cn(
-                                "w-full rounded-md border px-2.5 py-2 text-left transition-colors duration-150",
-                                "hover:border-border hover:bg-accent/70",
+                                "w-full rounded-sm border px-2 py-1.5 text-left transition-colors duration-150",
+                                "hover:border-border hover:bg-accent/65",
                                 selected
                                   ? "border-primary/45 bg-accent/80 text-foreground"
                                   : "border-border/70 bg-transparent text-foreground",
@@ -749,12 +749,12 @@ export function App() {
                                 </div>
                               </div>
                               {hasDistinctSkillKey ? (
-                                <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                                   {skill.skill_key}
                                 </p>
                               ) : null}
                               {skill.workspace ? (
-                                <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                                   {skill.workspace}
                                 </p>
                               ) : null}
@@ -794,7 +794,7 @@ export function App() {
                           aria-label={isDetailsSkillStarred ? "Unstar" : "Star"}
                           title={isDetailsSkillStarred ? "Unstar" : "Star"}
                           className={cn(
-                            "inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors",
+                            "inline-flex h-5.5 w-5.5 items-center justify-center rounded-sm border transition-colors",
                             "disabled:pointer-events-none disabled:opacity-50",
                             isDetailsSkillStarred
                               ? "border-amber-500/65 bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300"
@@ -830,7 +830,7 @@ export function App() {
                   </div>
                 </CardHeader>
 
-                <CardContent className="space-y-3 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                <CardContent className="space-y-2.5 p-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                   <dl className="grid gap-x-3 gap-y-2 text-xs sm:grid-cols-2">
                     <div>
                       <dt className="mb-1 text-muted-foreground">Workspace</dt>
@@ -860,7 +860,7 @@ export function App() {
                     </div>
                   </dl>
 
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/80 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/80 pt-2.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         size="sm"
@@ -955,7 +955,7 @@ export function App() {
 
                   {details.skill.status === "active" ? (
                     <form
-                      className="flex flex-wrap items-center gap-2 border-t border-border/80 pt-3"
+                      className="flex flex-wrap items-center gap-2 border-t border-border/80 pt-2.5"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void handleRenameSkill(
@@ -986,7 +986,7 @@ export function App() {
                     </form>
                   ) : null}
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       SKILL.md preview
                     </h3>
@@ -1022,7 +1022,7 @@ export function App() {
                     )}
                   </section>
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       SKILL dir tree
                     </h3>
@@ -1044,7 +1044,7 @@ export function App() {
                     )}
                   </section>
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Targets
                     </h3>
@@ -1086,7 +1086,7 @@ export function App() {
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                <CardContent className="space-y-2.5 p-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                   <dl className="grid gap-x-3 gap-y-2 text-xs sm:grid-cols-2">
                     <div>
                       <dt className="mb-1 text-muted-foreground">Command</dt>
@@ -1112,7 +1112,7 @@ export function App() {
                     </div>
                   </dl>
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Enable by agent
                     </h3>
@@ -1163,7 +1163,7 @@ export function App() {
                     </div>
                   </section>
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Args
                     </h3>
@@ -1183,7 +1183,7 @@ export function App() {
                     )}
                   </section>
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Targets
                     </h3>
@@ -1205,7 +1205,7 @@ export function App() {
                     )}
                   </section>
 
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Env
                     </h3>
@@ -1247,7 +1247,7 @@ export function App() {
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                <CardContent className="space-y-2.5 p-2.5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                   <dl className="grid gap-x-3 gap-y-2 text-xs sm:grid-cols-2">
                     <div>
                       <dt className="mb-1 text-muted-foreground">Workspace</dt>
@@ -1286,7 +1286,7 @@ export function App() {
                       </dd>
                     </div>
                   </dl>
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Symlink metadata
                     </h3>
@@ -1311,7 +1311,7 @@ export function App() {
                       </div>
                     </dl>
                   </section>
-                  <div className="flex flex-wrap items-center gap-2 border-t border-border/80 pt-3">
+                  <div className="flex flex-wrap items-center gap-2 border-t border-border/80 pt-2.5">
                     <Button
                       size="sm"
                       variant="outline"
@@ -1339,7 +1339,7 @@ export function App() {
                       Open file
                     </Button>
                   </div>
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Targets
                     </h3>
@@ -1360,7 +1360,7 @@ export function App() {
                       </ul>
                     )}
                   </section>
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Target link status
                     </h3>
@@ -1399,7 +1399,7 @@ export function App() {
                       </ul>
                     )}
                   </section>
-                  <section className="space-y-2 border-t border-border/80 pt-3">
+                  <section className="space-y-1.5 border-t border-border/80 pt-2.5">
                     <h3 className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                       Subagent prompt preview
                     </h3>
