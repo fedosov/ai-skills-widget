@@ -119,6 +119,28 @@ jobs:
         working-directory: platform/apps/skillssync-desktop/ui
         run: npm run build
 
+  ui-test:
+    name: UI Test (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: platform/apps/skillssync-desktop/ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: platform/apps/skillssync-desktop/ui
+        run: npm ci
+
+      - name: Run UI tests
+        working-directory: platform/apps/skillssync-desktop/ui
+        run: npm run test
+
   windows-tauri-preflight:
     name: Windows Tauri Preflight
     runs-on: windows-latest
